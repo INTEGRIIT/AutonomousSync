@@ -1,0 +1,8 @@
+from enum import Enum
+
+class SystemState(str, Enum):
+    STILL = "STILL"
+    MOVING = "MOVING"
+    USER_INTERACTION = "USER_INTERACTION"
+    WATER_INTERACTION = "WATER_INTERACTION"
+    UNSTABLE = "UNSTABLE"

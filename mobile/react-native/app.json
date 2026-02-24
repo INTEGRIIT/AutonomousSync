@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Autonomous Sync",
+    "slug": "autonomous-sync",
+    "version": "1.0.0",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.autonomoussync",
+      "infoPlist": {
+        "NSUserNotificationUsageDescription": "Autonomous Sync uses notifications to alert you about important device events.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "plugins": ["expo-notifications"],
+    "android": {
+      "package": "com.anonymous.autonomoussync"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "aac8be3e-7308-4314-90ad-7687eda7ef7f"
+      }
+    },
+    "owner": "darrylcarp75"
+  }
+}
