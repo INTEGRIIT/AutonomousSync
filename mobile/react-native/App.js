@@ -24,7 +24,6 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const WS_PORT = 8012;
 const SEND_INTERVAL_MS = 60;
 const SENSOR_ACCEL_MS = 50;
 const SENSOR_GYRO_MS = 50;
@@ -48,7 +47,6 @@ export default function App() {
   // ✅ Push registration guard (prevents re-register spam when editing IP / deviceId)
   const hasRegisteredRef = useRef(false);
 
-  const [ip, setIp] = useState("3.80.27.210"); // e.g. 192.168.50.187
 
   // ✅ Diamond-tier default: unique deviceId per phone (teammates won’t overwrite each other)
   // Still editable in the UI if you want a specific ID for demos.
@@ -73,8 +71,7 @@ export default function App() {
   const gyrRef = useRef({ x: 0, y: 0, z: 0 });
   const magRef = useRef({ x: 0, y: 0, z: 0 });
 
-  const wsUrl = useMemo(() => `ws://${ip}:${WS_PORT}/ws/stream`, [ip]);
-
+  const wsUrl = useMemo(() => `wss://api.autonomous-sync.com/ws/stream`, []);
   // ❤️ Heartbeat ticker (1Hz)
   useEffect(() => {
     console.log("🟢 Heartbeat effect mounted");
@@ -118,7 +115,7 @@ export default function App() {
       console.log("✅ APNs token:", apnsToken);
 
       try {
-        const res = await fetch(`http://${ip}:8012/push/register`, {
+        await fetch(`https://api.autonomous-sync.com/push/register`, {          
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -339,7 +336,7 @@ export default function App() {
         }}
       >
         <Text style={{ color: "white", textAlign: "center", fontWeight: "800" }}>
-          {connected ? "Disconnect" : "Connect"} ({ip}:{WS_PORT})
+          {connected ? "Disconnect" : "Connect"} (Production)
         </Text>
       </Pressable>
 

@@ -1,3 +1,8 @@
+Aamazon EC2 setup
+sudo apt update
+sudo apt install git python3-pip -y
+
+
 Amazon AWS EC2 instance
 # SSH into instance
 ssh -i ~/.ssh/AutonomousSynckey.pem ubuntu@3.80.27.210
