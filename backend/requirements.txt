@@ -6,3 +6,5 @@ scipy
 orjson
 python-dotenv
 pytest
+httpx
+jwt

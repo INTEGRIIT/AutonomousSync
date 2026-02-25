@@ -1,8 +1,8 @@
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView } from "react-native";
 import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
 import * as Notifications from "expo-notifications";
+import * as Device from "expo-device";
 
 async function registerForAPNsAsync() {
   const { status } = await Notifications.getPermissionsAsync();
@@ -45,11 +45,20 @@ export default function App() {
   // ✅ De-dupe key so “same event frame” doesn’t spam
   const lastNotifyKeyRef = useRef(null);
 
-  const [ip, setIp] = useState("YOUR_LAN_IP"); // e.g. 192.168.50.187
-  const [deviceId, setDeviceId] = useState("iphone-1");
+  // ✅ Push registration guard (prevents re-register spam when editing IP / deviceId)
+  const hasRegisteredRef = useRef(false);
+
+  const [ip, setIp] = useState("3.80.27.210"); // e.g. 192.168.50.187
+
+  // ✅ Diamond-tier default: unique deviceId per phone (teammates won’t overwrite each other)
+  // Still editable in the UI if you want a specific ID for demos.
+  const [deviceId, setDeviceId] = useState(
+    `${Device.modelName || "ios"}-${Math.random().toString(36).slice(2, 8)}`
+  );
+
   const [connected, setConnected] = useState(false);
   const [touchActive, setTouchActive] = useState(false);
-    // ❤️ Heartbeat (JS thread liveness)
+  // ❤️ Heartbeat (JS thread liveness)
   const [heartbeat, setHeartbeat] = useState(0);
 
   const [latest, setLatest] = useState({
@@ -94,6 +103,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // ✅ Prevent re-registering push every time IP/deviceId changes (still can be done manually by reloading app)
+    if (hasRegisteredRef.current) return;
+    hasRegisteredRef.current = true;
+
     (async () => {
       const apnsToken = await registerForAPNsAsync();
 
@@ -104,18 +117,23 @@ export default function App() {
 
       console.log("✅ APNs token:", apnsToken);
 
-      await fetch(`http://${ip}:8012/push/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          device_id: deviceId,
-          push_token: apnsToken,   // 🔑 REAL APNs TOKEN
-          platform: "ios",
-        }),
-      });
+      try {
+        const res = await fetch(`http://${ip}:8012/push/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            device_id: deviceId,
+            push_token: apnsToken, // 🔑 REAL APNs TOKEN
+            platform: "ios",
+          }),
+        });
+
+        console.log("📡 Push register status:", res.status);
+      } catch (err) {
+        console.log("❌ Push register failed:", err);
+      }
     })();
   }, [ip, deviceId]);
-
 
   /* ---------------- Sensors ---------------- */
 
@@ -197,8 +215,6 @@ export default function App() {
     }, 900);
   };
 
-
-
   const connect = (isReconnect = false) => {
     console.log("🔗 Attempting WS URL:", wsUrl);
     if (wsRef.current && [0, 1].includes(wsRef.current.readyState)) return;
@@ -268,7 +284,14 @@ export default function App() {
   /* ---------------- UI ---------------- */
 
   return (
-    <ScrollView style={{ backgroundColor: "#ffffff" }} contentContainerStyle={{ flexGrow: 1, padding: 18, justifyContent: "center" }}>
+    <ScrollView
+      style={{ backgroundColor: "#ffffff" }}
+      contentContainerStyle={{
+        flexGrow: 1,
+        padding: 18,
+        justifyContent: "center",
+      }}
+    >
       <Text style={{ fontSize: 22, fontWeight: "800", marginBottom: 12 }}>
         Autonomous Sync
       </Text>
@@ -277,7 +300,13 @@ export default function App() {
       <TextInput
         value={ip}
         onChangeText={setIp}
-        style={{ borderWidth: 1, borderColor: "#444", padding: 10, borderRadius: 10, marginBottom: 10 }}
+        style={{
+          borderWidth: 1,
+          borderColor: "#444",
+          padding: 10,
+          borderRadius: 10,
+          marginBottom: 10,
+        }}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -286,7 +315,13 @@ export default function App() {
       <TextInput
         value={deviceId}
         onChangeText={setDeviceId}
-        style={{ borderWidth: 1, borderColor: "#444", padding: 10, borderRadius: 10, marginBottom: 10 }}
+        style={{
+          borderWidth: 1,
+          borderColor: "#444",
+          padding: 10,
+          borderRadius: 10,
+          marginBottom: 10,
+        }}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -330,24 +365,44 @@ export default function App() {
         Sync: {String(latest.decision?.sync)} ({latest.decision?.reason ?? "—"})
       </Text>
 
-      <View style={{ marginTop: 14, padding: 12, borderWidth: 1, borderColor: "#333", borderRadius: 12 }}>
+      <View
+        style={{
+          marginTop: 14,
+          padding: 12,
+          borderWidth: 1,
+          borderColor: "#333",
+          borderRadius: 12,
+        }}
+      >
         <Text style={{ fontWeight: "900" }}>Live Telemetry</Text>
         <Text>Recv Rate: {pps} msg/sec</Text>
         <Text>Water: {waterText}</Text>
         <Text>Stable(ms): {latest?.temporal?.stable_duration_ms ?? "—"}</Text>
         <Text>
-          acc_norm: {f(latest?.features?.acc_norm)} | gyr_norm: {f(latest?.features?.gyr_norm)}
+          acc_norm: {f(latest?.features?.acc_norm)} | gyr_norm:{" "}
+          {f(latest?.features?.gyr_norm)}
         </Text>
         <Text>
-          jerk: {f(latest?.features?.jerk)} | stability: {f(latest?.features?.stability)}
+          jerk: {f(latest?.features?.jerk)} | stability:{" "}
+          {f(latest?.features?.stability)}
         </Text>
       </View>
 
-      <View style={{ marginTop: 12, padding: 12, borderWidth: 1, borderColor: "#333", borderRadius: 12 }}>
+      <View
+        style={{
+          marginTop: 12,
+          padding: 12,
+          borderWidth: 1,
+          borderColor: "#333",
+          borderRadius: 12,
+        }}
+      >
         <Text style={{ fontWeight: "900" }}>Emergency</Text>
         <Text>
           Snapshot:{" "}
-          {latest?.emergency?.type ? `${latest.emergency.type} (${latest.emergency.state})` : "—"}
+          {latest?.emergency?.type
+            ? `${latest.emergency.type} (${latest.emergency.state})`
+            : "—"}
         </Text>
       </View>
 
