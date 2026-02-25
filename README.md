@@ -1,3 +1,24 @@
+Amazon AWS EC2 instance
+# SSH into instance
+ssh -i ~/.ssh/AutonomousSynckey.pem ubuntu@3.80.27.210
+
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Clone repository
+git clone <repo_url>
+cd backend
+
+# Install dependencies
+pip3 install -r requirements.txt
+
+# Run backend
+uvicorn app:app --host 0.0.0.0 --port 8012
+
+
+
+
+
 To start the back end fromproject root:
 python3 -m uvicorn backend.app:app --host 0.0.0.0 --port 8012
 
