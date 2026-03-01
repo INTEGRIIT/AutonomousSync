@@ -5,7 +5,7 @@ from backend.storage.jsonl_store import JSONLStore
 from backend.utils.jsonx import loads, dumps
 from backend.sensors.sanity import vec3_to_np
 from backend.sync_engine.actions import snapshot_action
-from backend.push.registry import register_device, all_devices
+from backend.push.registry import register_device, all_devices, get_device
 from backend.push.sender import send_push
 
 import time
@@ -149,6 +149,10 @@ async def ws_stream(ws: WebSocket):
             raw = await ws.receive_text()
             data = loads(raw)
             packet = SensorPacket(**data)
+            # Lookup device metadata from registry
+            record = get_device(packet.device_uid)
+            device_name = record["device_name"] if record else None
+            platform = record.get("platform") if record else None
 
             # Init per-device log store ONCE
             if device_store is None:
@@ -210,15 +214,27 @@ async def ws_stream(ws: WebSocket):
 
             out = {
                 "ts": time.time(),
+
+                # Identity
                 "device_uid": packet.device_uid,
+                "device_name": device_name,
+                "platform": platform,
+
+                # State + transitions
                 "state": state,
                 "transition": transition,
+
+                # Decision layer
                 "decision": decision,
                 "action": action,
+
+                # Feature layers (ML gold)
                 "features": feats,
                 "temporal": temporal,
                 "water": water,
                 "emergency": emergency_intent,
+
+                # Push tracking
                 "push": {"sent": bool(push_ok)} if push_ok is not None else None,
             }
 
