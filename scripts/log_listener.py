@@ -7,8 +7,8 @@ import signal
 # CONFIG
 # ===============================
 
-EC2_IP = "YOUR_EC2_PUBLIC_IP"
-PORT = 8765
+EC2_IP = "3.80.27.210"
+PORT = 8766
 
 # ===============================
 # ARGUMENT PARSING

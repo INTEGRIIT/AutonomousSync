@@ -1,65 +1,155 @@
+#!/usr/bin/env python3
 import asyncio
-import websockets
-import subprocess
 import os
-from urllib.parse import urlparse, parse_qs
+import signal
+import argparse
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
-LOG_DIR = "/AutonomousSync/logs/devices"
+import websockets
 
-async def stream_logs(websocket, path):
-    parsed = urlparse(path)
-    params = parse_qs(parsed.query)
 
-    mode = params.get("mode", ["live"])[0]  # default = live
+def _get_path(websocket, maybe_path):
+    """
+    websockets library changed handler signatures across versions:
+      - some call handler(websocket)
+      - older call handler(websocket, path)
 
-    files = [
-        os.path.join(LOG_DIR, f)
-        for f in os.listdir(LOG_DIR)
-        if os.path.isfile(os.path.join(LOG_DIR, f))
-    ]
+    This makes us compatible with both.
+    """
+    if maybe_path:
+        return maybe_path
 
-    # 🟡 MODE 2: Dump history first
-    if mode == "full":
-        for file_path in files:
-            try:
-                with open(file_path, "r") as f:
-                    for line in f:
-                        await websocket.send(
-                            f"[{Path(file_path).name}] {line.strip()}"
-                        )
-            except Exception as e:
-                await websocket.send(f"Error reading {file_path}: {e}")
+    # Try common attributes across versions
+    for attr in ("path",):
+        v = getattr(websocket, attr, None)
+        if isinstance(v, str) and v:
+            return v
 
-        await websocket.send("----- LIVE STREAM STARTED -----")
+    # Newer versions may store request info differently
+    req = getattr(websocket, "request", None)
+    if req is not None:
+        p = getattr(req, "path", None)
+        if isinstance(p, str) and p:
+            return p
 
-    # 🟢 MODE 1: Live stream only (default)
-    processes = []
+    return "/"
 
-    for file_path in files:
-        process = subprocess.Popen(
-            ["tail", "-F", file_path],
-            stdout=subprocess.PIPE,
-            text=True,
-        )
-        processes.append((process, file_path))
+
+async def _send_file_history(ws, file_path: str):
+    name = Path(file_path).name
+    try:
+        # stream file contents line by line (safe for large files)
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.rstrip("\n")
+                if line:
+                    await ws.send(f"[{name}] {line}")
+    except Exception as e:
+        await ws.send(f"[{name}] ERROR reading history: {e}")
+
+
+async def _tail_file(ws, file_path: str):
+    """
+    tails a file and streams new lines as they arrive.
+    """
+    name = Path(file_path).name
+
+    # -n 0 => start at end (live only)
+    # -F => follow name (handles rotate)
+    proc = await asyncio.create_subprocess_exec(
+        "tail", "-n", "0", "-F", file_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
 
     try:
         while True:
-            for process, file_path in processes:
-                line = process.stdout.readline()
-                if line:
-                    await websocket.send(
-                        f"[{Path(file_path).name}] {line.strip()}"
-                    )
-            await asyncio.sleep(0.05)
+            line = await proc.stdout.readline()
+            if not line:
+                await asyncio.sleep(0.05)
+                continue
+            text = line.decode("utf-8", errors="replace").rstrip("\n")
+            if text:
+                await ws.send(f"[{name}] {text}")
     finally:
-        for process, _ in processes:
-            process.kill()
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        try:
+            await proc.wait()
+        except Exception:
+            pass
 
-async def main():
-    async with websockets.serve(stream_logs, "0.0.0.0", 8766):
-        print("🟢 Device log server running on port 8766")
-        await asyncio.Future()
 
-asyncio.run(main())
+async def stream_logs(websocket, path=None, *, log_dir: str):
+    # ✅ signature-safe
+    path = _get_path(websocket, path)
+
+    parsed = urlparse(path)
+    params = parse_qs(parsed.query)
+    mode = (params.get("mode", ["live"])[0] or "live").lower()  # default live
+
+    # Gather all log files from folder
+    files = sorted(
+        str(Path(log_dir) / f)
+        for f in os.listdir(log_dir)
+        if os.path.isfile(os.path.join(log_dir, f))
+    )
+
+    await websocket.send(f"✅ Connected. mode={mode}. files={len(files)}")
+    if not files:
+        await websocket.send("⚠️ No log files found in devices folder.")
+        return
+
+    # 🥈 Mode 2: dump history then stream
+    if mode == "full":
+        await websocket.send("📦 MODE=full: dumping existing logs first...")
+        for fp in files:
+            await _send_file_history(websocket, fp)
+        await websocket.send("------ LIVE STREAM STARTED ------")
+
+    # 🥇 Mode 1: live only
+    tails = []
+    try:
+        for fp in files:
+            tails.append(asyncio.create_task(_tail_file(websocket, fp)))
+
+        # wait until client disconnects or task errors
+        done, pending = await asyncio.wait(
+            tails,
+            return_when=asyncio.FIRST_EXCEPTION,
+        )
+        for t in done:
+            exc = t.exception()
+            if exc:
+                raise exc
+    finally:
+        for t in tails:
+            t.cancel()
+
+
+async def main(host: str, port: int, log_dir: str):
+    async def handler(websocket, path=None):
+        return await stream_logs(websocket, path, log_dir=log_dir)
+
+    print(f"🟢 Device log streaming server starting on {host}:{port}")
+    print(f"📁 Log dir: {log_dir}")
+
+    async with websockets.serve(handler, host, port):
+        await asyncio.Future()  # run forever
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--log-dir", default="/AutonomousSync/logs/devices")
+    args = parser.parse_args()
+
+    # nicer shutdown
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: (_ for _ in ()).throw(SystemExit))
+
+    asyncio.run(main(args.host, args.port, args.log_dir))
