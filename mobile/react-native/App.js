@@ -5,6 +5,8 @@ import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { v4 as uuidv4 } from "uuid";
+import StatusBar from "./components/StatusBar";
+import SettingsModal from "./components/SettingsModal";
 
 async function registerForAPNsAsync() {
   const { status } = await Notifications.getPermissionsAsync();
@@ -26,7 +28,6 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const WS_PORT = 8012;
 const SEND_INTERVAL_MS = 60;
 const SENSOR_ACCEL_MS = 50;
 const SENSOR_GYRO_MS = 50;
@@ -47,36 +48,89 @@ export default function App() {
   // ✅ De-dupe key so “same event frame” doesn’t spam
   const lastNotifyKeyRef = useRef(null);
 
+  const didHydrateNameRef = useRef(false);
+  const hydratedNameRef = useRef(null); // remembers the name we hydrated from storage
+
+  const [configured, setConfigured] = useState(false);
+  const [registered, setRegistered] = useState(false);
   const [deviceUid, setDeviceUid] = useState(null);
   const [deviceName, setDeviceName] = useState("My iPhone");
   const [connected, setConnected] = useState(false);
   const [touchActive, setTouchActive] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
     // ❤️ Heartbeat (JS thread liveness)
   const [heartbeat, setHeartbeat] = useState(0);
 
+  // 🔐 Persist device name whenever it changes
+  // 🔐 Persist device name whenever it changes
   useEffect(() => {
-    const initUid = async () => {
+    const save = async () => {
       try {
-        console.log("INIT START");
+        const name = (deviceName || "").trim();
+        if (name.length === 0) return;
 
-        let stored = await SecureStore.getItemAsync("device_uid");
-        console.log("SECURESTORE RETURN:", stored);
+        await SecureStore.setItemAsync("device_name", name);
 
-        if (!stored) {
+        // ✅ Only force re-register if the name actually changed AFTER hydration
+        if (didHydrateNameRef.current) {
+          const prev = (hydratedNameRef.current || "").trim();
+
+          // if we have a previous hydrated name AND it differs, force re-register
+          if (prev.length > 0 && prev !== name) {
+            await SecureStore.deleteItemAsync("push_registered");
+            setRegistered(false);
+
+            // update baseline so we don't keep triggering
+            hydratedNameRef.current = name;
+          }
+        }
+      } catch (e) {
+        console.log("SAVE NAME ERROR:", e);
+      }
+    };
+
+    save();
+  }, [deviceName]);
+
+  useEffect(() => {
+    setConfigured((deviceName || "").trim().length > 0);
+  }, [deviceName]);
+
+  useEffect(() => {
+    const initDevice = async () => {
+      try {
+        console.log("INIT DEVICE START");
+
+        // --- UID ---
+        let storedUid = await SecureStore.getItemAsync("device_uid");
+        if (!storedUid) {
           console.log("GENERATING UUID");
-          stored = uuidv4();
-          await SecureStore.setItemAsync("device_uid", stored);
+          storedUid = uuidv4();
+          await SecureStore.setItemAsync("device_uid", storedUid);
+        }
+        setDeviceUid(storedUid);
+
+        // --- Device Name ---
+        let storedName = await SecureStore.getItemAsync("device_name");
+        if (storedName) {
+          setDeviceName(storedName);
         }
 
-        console.log("SETTING UID:", stored);
-        setDeviceUid(stored);
+        // ✅ set baseline hydrated name (stored name if present, otherwise current default)
+        hydratedNameRef.current = (storedName || "").trim();
+
+        const reg = await SecureStore.getItemAsync("push_registered");
+        setRegistered(reg === "1");
+        didHydrateNameRef.current = true;
+
+        console.log("DEVICE INIT COMPLETE");
 
       } catch (e) {
         console.log("INIT ERROR:", e);
       }
     };
 
-    initUid();
+    initDevice();
   }, []);
 
   const [latest, setLatest] = useState({
@@ -247,6 +301,9 @@ export default function App() {
     }
 
     console.log("📡 Push registered successfully");
+    setRegistered(true);
+    await SecureStore.setItemAsync("push_registered", "1");
+    hydratedNameRef.current = deviceName.trim();
 
     // 3️⃣ Open WebSocket
     console.log("🔗 Attempting WS URL:", wsUrl);
@@ -325,18 +382,17 @@ export default function App() {
 
   return (
     <ScrollView style={{ backgroundColor: "#ffffff" }} contentContainerStyle={{ flexGrow: 1, padding: 18, justifyContent: "center" }}>
+      <StatusBar
+        deviceName={deviceName}
+        deviceUid={deviceUid}
+        connected={connected}
+        registered={registered}
+        pps={pps}
+        onSettingsPress={() => setShowSettings(true)}
+      />
       <Text style={{ fontSize: 22, fontWeight: "800", marginBottom: 12 }}>
         Autonomous Sync
       </Text>
-
-      <Text>Device Name:</Text>
-      <TextInput
-        value={deviceName}
-        onChangeText={setDeviceName}
-        style={{ borderWidth: 1, borderColor: "#444", padding: 10, borderRadius: 10, marginBottom: 10 }}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
 
       <Pressable
         onPress={() => {
@@ -401,6 +457,15 @@ export default function App() {
       <Text style={{ marginTop: 16, color: "#666" }}>
         Connected to secure AWS cloud infrastructure.
       </Text>
+      <SettingsModal
+        visible={showSettings}
+        onClose={() => setShowSettings(false)}
+        deviceName={deviceName}
+        setDeviceName={setDeviceName}
+        onReRegister={async () => {
+          // Optional: call push/register again here
+        }}
+      />
     </ScrollView>
   );
 }
