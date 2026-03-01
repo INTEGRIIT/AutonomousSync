@@ -462,9 +462,6 @@ export default function App() {
         onClose={() => setShowSettings(false)}
         deviceName={deviceName}
         setDeviceName={setDeviceName}
-        onReRegister={async () => {
-          // Optional: call push/register again here
-        }}
       />
     </ScrollView>
   );

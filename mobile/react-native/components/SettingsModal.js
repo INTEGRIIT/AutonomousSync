@@ -1,33 +1,55 @@
-import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, Modal } from "react-native";
-import * as SecureStore from "expo-secure-store";
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 
 export default function SettingsModal({
   visible,
   onClose,
   deviceName,
   setDeviceName,
-  onReRegister,
 }) {
-  const [localName, setLocalName] = useState(deviceName);
+  const [localName, setLocalName] = useState(deviceName || "");
 
-  const handleSave = async () => {
-    const trimmed = localName.trim();
-    if (!trimmed) return;
-
-    await SecureStore.setItemAsync("device_name", trimmed);
-    setDeviceName(trimmed);
-
-    if (onReRegister) {
-      await onReRegister(trimmed);
+  // 🔄 Always hydrate input when modal opens
+  useEffect(() => {
+    if (visible) {
+      setLocalName(deviceName || "");
     }
+  }, [visible, deviceName]);
+
+  const trimmed = (localName || "").trim();
+  const original = (deviceName || "").trim();
+
+  const canSave =
+    trimmed.length > 0 &&
+    trimmed !== original;
+
+  const handleSave = () => {
+    if (!canSave) return;
+
+    // ✅ Only update state
+    // App.js handles persistence + re-register logic
+    setDeviceName(trimmed);
 
     onClose();
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{
           flex: 1,
           justifyContent: "center",
@@ -38,14 +60,14 @@ export default function SettingsModal({
         <View
           style={{
             backgroundColor: "#0f172a",
-            padding: 22,
-            borderRadius: 20,
+            padding: 24,
+            borderRadius: 22,
           }}
         >
           <Text
             style={{
               fontSize: 18,
-              fontWeight: "700",
+              fontWeight: "800",
               color: "white",
               marginBottom: 18,
             }}
@@ -53,38 +75,59 @@ export default function SettingsModal({
             Device Settings
           </Text>
 
-          <Text style={{ color: "#94a3b8", marginBottom: 6 }}>
+          <Text
+            style={{
+              color: "#94a3b8",
+              marginBottom: 6,
+              fontWeight: "600",
+            }}
+          >
             Device Name
           </Text>
 
           <TextInput
             value={localName}
             onChangeText={setLocalName}
+            autoCapitalize="words"
+            autoCorrect={false}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={handleSave}
+            placeholder="e.g., Darryl’s iPhone"
+            placeholderTextColor="#64748b"
             style={{
               borderWidth: 1,
               borderColor: "#334155",
-              padding: 12,
-              borderRadius: 14,
-              marginBottom: 18,
+              padding: 14,
+              borderRadius: 16,
+              marginBottom: 20,
               color: "white",
               backgroundColor: "#1e293b",
+              fontSize: 15,
             }}
           />
 
           <Pressable
             onPress={handleSave}
+            disabled={!canSave}
             style={({ pressed }) => ({
-              padding: 14,
-              borderRadius: 14,
-              backgroundColor: pressed ? "#15803d" : "#16a34a",
+              padding: 16,
+              borderRadius: 16,
+              backgroundColor: !canSave
+                ? "#064e3b"
+                : pressed
+                ? "#15803d"
+                : "#16a34a",
+              opacity: !canSave ? 0.6 : 1,
               marginBottom: 12,
+              transform: pressed ? [{ scale: 0.98 }] : [{ scale: 1 }],
             })}
           >
             <Text
               style={{
                 color: "white",
                 textAlign: "center",
-                fontWeight: "700",
+                fontWeight: "800",
               }}
             >
               Save Changes
@@ -94,23 +137,24 @@ export default function SettingsModal({
           <Pressable
             onPress={onClose}
             style={({ pressed }) => ({
-              padding: 14,
-              borderRadius: 14,
+              padding: 16,
+              borderRadius: 16,
               backgroundColor: pressed ? "#7f1d1d" : "#991b1b",
+              transform: pressed ? [{ scale: 0.98 }] : [{ scale: 1 }],
             })}
           >
             <Text
               style={{
                 color: "white",
                 textAlign: "center",
-                fontWeight: "700",
+                fontWeight: "800",
               }}
             >
               Cancel
             </Text>
           </Pressable>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
