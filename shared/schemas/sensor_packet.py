@@ -17,7 +17,7 @@ class MoistureState(BaseModel):
 
 class SensorPacket(BaseModel):
     ts: float = Field(..., description="Unix ms timestamp")
-    device_id: str = "unknown"
+    device_uid: str = Field(..., description="Permanent device UUID")
     accel: Optional[Vec3] = None
     gyro: Optional[Vec3] = None
     mag: Optional[Vec3] = None

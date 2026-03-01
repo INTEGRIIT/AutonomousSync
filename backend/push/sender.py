@@ -51,15 +51,15 @@ def _get_jwt() -> str:
 # ---------------------------------------------------------
 
 def send_push(
-    device_id: str,
+    device_uid: str,
     title: str,
     body: str,
     data: dict | None = None,
 ) -> bool:
 
-    record = get_device(device_id)
+    record = get_device(device_uid)
     if not record:
-        print(f"[push] no device registered: {device_id}")
+        print(f"[push] no device registered: {device_uid}")
         return False
 
     token = record["token"]

@@ -52,13 +52,13 @@ def logs_recent(n: int = 50):
 # =========================================================
 
 @router.post("/push/register")
-def register_push(data: dict):
-    register_device(
-        device_id=data["device_id"],
-        token=data["push_token"],
-        platform=data.get("platform", "ios"),
-    )
-    return {"ok": True}
+async def push_register(payload: dict):
+    device_uid = payload["device_uid"]
+    device_name = payload["device_name"]
+    token = payload["push_token"]
+    platform = payload.get("platform")
+
+    register_device(device_uid, device_name, token, platform)
 
 
 # =========================================================
@@ -67,10 +67,10 @@ def register_push(data: dict):
 
 @router.post("/push/test")
 def test_push(data: dict):
-    device_id = data.get("device_id", "iphone-1")
+    device_uid = data.get("device_uid")
 
     ok = send_push(
-        device_id=device_id,
+        device_uid=device_uid,
         title="🔔 Push Test",
         body="If you see this, backend push logic is firing.",
         data={"test": True},
@@ -78,7 +78,7 @@ def test_push(data: dict):
 
     return {
         "ok": ok,
-        "device_id": device_id,
+        "device_uid": device_uid,
     }
 
 
@@ -145,7 +145,7 @@ async def ws_stream(ws: WebSocket):
             action = None
             if decision.get("sync"):
                 action = snapshot_action({
-                    "device_id": packet.device_id,
+                    "device_uid": packet.device_uid,
                     "state": state,
                     "type": decision.get("type"),
                     "reason": decision.get("reason"),
@@ -154,7 +154,7 @@ async def ws_stream(ws: WebSocket):
 
                 if decision.get("notify"):
                     send_push(
-                        device_id=packet.device_id,
+                        device_uid=packet.device_uid,
                         title="⚠️ Emergency Backup"
                         if decision.get("type") == "EMERGENCY"
                         else "Autonomous Sync",
@@ -164,7 +164,7 @@ async def ws_stream(ws: WebSocket):
 
             out = {
                 "ts": time.time(),
-                "device_id": packet.device_id,
+                "device_uid": packet.device_uid,
                 "state": state,
                 "transition": transition,
                 "decision": decision,

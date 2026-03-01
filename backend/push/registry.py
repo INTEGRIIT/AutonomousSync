@@ -14,7 +14,7 @@ def is_valid_apns_token(token: str) -> bool:
     )
 
 
-def register_device(device_id: str, token: str, platform: Optional[str] = None):
+def register_device(device_uid: str, device_name: str, token: str, platform: Optional[str] = None,):
     """
     Register or update a device APNs token.
 
@@ -29,20 +29,22 @@ def register_device(device_id: str, token: str, platform: Optional[str] = None):
     if platform and platform != "ios":
         raise ValueError("Only iOS APNs tokens are supported")
 
-    _DEVICES[device_id] = {
+    _DEVICES[device_uid] = {
+        "device_name": device_name,
         "token": token,
         "platform": "ios",
         "last_seen": time.time(),
     }
 
     print(
-        f"[push] registered device={device_id} "
+        f"[push] registered uid={device_uid} "
+        f"name={device_name} "
         f"platform=ios token_len={len(token)}"
     )
 
 
-def get_device(device_id: str) -> Optional[dict]:
-    return _DEVICES.get(device_id)
+def get_device(device_uid: str) -> Optional[dict]:
+    return _DEVICES.get(device_uid)
 
 
 def all_devices():
