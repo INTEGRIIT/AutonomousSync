@@ -151,7 +151,7 @@ async def ws_stream(ws: WebSocket):
             packet = SensorPacket(**data)
             # Lookup device metadata from registry
             record = get_device(packet.device_uid)
-            device_name = record["device_name"] if record else None
+            device_name = record.get("device_name") if record else None
             platform = record.get("platform") if record else None
 
             # Init per-device log store ONCE
