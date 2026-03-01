@@ -145,7 +145,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8766)
-    parser.add_argument("--log-dir", default="/AutonomousSync/logs/devices")
+    parser.add_argument("--log-dir", default="/home/ubuntu/AutonomousSync/logs/devices")
     args = parser.parse_args()
 
     # nicer shutdown

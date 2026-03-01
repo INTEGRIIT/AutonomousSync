@@ -55,3 +55,15 @@ cd ios
 pod repo update
 pod install
 cd ..
+
+
+
+
+python log_listener.py
+python log_listener.py live
+
+python log_listener.py full
+
+
+python log_listener.py full 500
+?mode=full&limit=500
