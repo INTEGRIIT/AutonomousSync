@@ -49,7 +49,7 @@ export default function App() {
   const lastNotifyKeyRef = useRef(null);
 
   const didHydrateNameRef = useRef(false);
-  const hydratedNameRef = useRef(null); // remembers the name we hydrated from storage
+  const hydratedNameRef = useRef(""); // remembers the name we hydrated from storage
 
   const [configured, setConfigured] = useState(false);
   const [registered, setRegistered] = useState(false);
