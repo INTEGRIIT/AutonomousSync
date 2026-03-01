@@ -93,17 +93,17 @@ export default function SettingsModal({
             autoFocus
             returnKeyType="done"
             onSubmitEditing={handleSave}
-            placeholder="e.g., Darryl’s iPhone"
+            placeholder="Enter device name"
             placeholderTextColor="#64748b"
             style={{
-              borderWidth: 1,
-              borderColor: "#334155",
-              padding: 14,
-              borderRadius: 16,
-              marginBottom: 20,
-              color: "white",
-              backgroundColor: "#1e293b",
-              fontSize: 15,
+                borderWidth: 1,
+                borderColor: "#334155",
+                padding: 14,
+                borderRadius: 16,
+                marginBottom: 20,
+                color: "white",
+                backgroundColor: "#1e293b",
+                fontSize: 15,
             }}
           />
 

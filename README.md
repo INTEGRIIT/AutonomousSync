@@ -38,3 +38,20 @@ sdk.dir=/Users/YOUR_USERNAME/Library/Android/sdk
 4. Run:
 
 npx react-native run-android
+
+
+
+
+
+cd android
+./gradlew clean
+cd ..
+npx expo run:android
+
+
+
+
+cd ios
+pod repo update
+pod install
+cd ..

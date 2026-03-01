@@ -5,8 +5,15 @@ import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { v4 as uuidv4 } from "uuid";
+import * as Battery from "expo-battery";
 import StatusBar from "./components/StatusBar";
 import SettingsModal from "./components/SettingsModal";
+import ControlPanel from "./components/ControlPanel";
+import StatePanel from "./components/StatePanel";
+import TelemetryPanel from "./components/TelemetryPanel";
+import EmergencyPanel from "./components/EmergencyPanel";
+import BatteryPanel from "./components/BatteryPanel";
+import ConnectivityPanel from "./components/ConnectivityPanel";
 
 async function registerForAPNsAsync() {
   const { status } = await Notifications.getPermissionsAsync();
@@ -58,9 +65,52 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [touchActive, setTouchActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [batteryLevel, setBatteryLevel] = useState(null);
+  const [batteryState, setBatteryState] = useState(null);
+  const [drainRate, setDrainRate] = useState(null);
+  const [reconnecting, setReconnecting] = useState(false);
     // ❤️ Heartbeat (JS thread liveness)
   const [heartbeat, setHeartbeat] = useState(0);
 
+  /* ---------------- Battery Monitor ---------------- */
+
+  useEffect(() => {
+    let lastLevel = null;
+    let lastTs = null;
+
+    const updateBattery = async () => {
+      try {
+        const level = await Battery.getBatteryLevelAsync();
+        const state = await Battery.getBatteryStateAsync();
+
+        const now = Date.now();
+
+        if (lastLevel !== null && lastTs !== null) {
+          const delta = (lastLevel - level) * 100;
+          const minutes = (now - lastTs) / 60000;
+
+          if (minutes > 0) {
+            setDrainRate((delta / minutes).toFixed(2));
+          }
+        }
+
+        lastLevel = level;
+        lastTs = now;
+
+        setBatteryLevel(level);
+        setBatteryState(state);
+      } catch (e) {
+        console.log("Battery error:", e);
+      }
+    };
+
+    updateBattery();
+    const interval = setInterval(updateBattery, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // 🔐 Persist device name whenever it changes
   // 🔐 Persist device name whenever it changes
   // 🔐 Persist device name whenever it changes
   useEffect(() => {
@@ -71,18 +121,15 @@ export default function App() {
 
         await SecureStore.setItemAsync("device_name", name);
 
-        // ✅ Only force re-register if the name actually changed AFTER hydration
         if (didHydrateNameRef.current) {
           const prev = (hydratedNameRef.current || "").trim();
 
-          // if we have a previous hydrated name AND it differs, force re-register
           if (prev.length > 0 && prev !== name) {
             await SecureStore.deleteItemAsync("push_registered");
             setRegistered(false);
-
-            // update baseline so we don't keep triggering
-            hydratedNameRef.current = name;
           }
+
+          hydratedNameRef.current = name;
         }
       } catch (e) {
         console.log("SAVE NAME ERROR:", e);
@@ -111,20 +158,24 @@ export default function App() {
         setDeviceUid(storedUid);
 
         // --- Device Name ---
-        let storedName = await SecureStore.getItemAsync("device_name");
-        if (storedName) {
-          setDeviceName(storedName);
+        const storedName = await SecureStore.getItemAsync("device_name");
+
+        if (storedName && storedName.trim().length > 0) {
+          setDeviceName(storedName.trim());
+        } else {
+          // 🔥 FORCE USER TO CONFIGURE ON FIRST LAUNCH
+          setShowSettings(true);
         }
 
-        // ✅ set baseline hydrated name (stored name if present, otherwise current default)
+        // ✅ baseline hydrated name (only what exists in storage)
         hydratedNameRef.current = (storedName || "").trim();
 
         const reg = await SecureStore.getItemAsync("push_registered");
         setRegistered(reg === "1");
+
         didHydrateNameRef.current = true;
 
         console.log("DEVICE INIT COMPLETE");
-
       } catch (e) {
         console.log("INIT ERROR:", e);
       }
@@ -173,6 +224,8 @@ export default function App() {
       subResp.remove();
     };
   }, []);
+
+
 
 
   /* ---------------- Sensors ---------------- */
@@ -379,9 +432,17 @@ export default function App() {
     : "—";
 
   /* ---------------- UI ---------------- */
+  /* ---------------- UI ---------------- */
 
   return (
-    <ScrollView style={{ backgroundColor: "#ffffff" }} contentContainerStyle={{ flexGrow: 1, padding: 18, justifyContent: "center" }}>
+    <ScrollView
+      style={{ backgroundColor: "#ffffff" }}
+      contentContainerStyle={{
+        flexGrow: 1,
+        padding: 18,
+        justifyContent: "center",
+      }}
+    >
       <StatusBar
         deviceName={deviceName}
         deviceUid={deviceUid}
@@ -390,76 +451,65 @@ export default function App() {
         pps={pps}
         onSettingsPress={() => setShowSettings(true)}
       />
-      <Text style={{ fontSize: 22, fontWeight: "800", marginBottom: 12 }}>
-        Autonomous Sync
-      </Text>
 
-      <Pressable
-        onPress={() => {
-          console.log("🔌 CONNECT PRESSED");
-          connected ? disconnect() : connect(false);
-        }}
+      <Text
         style={{
-          padding: 12,
-          borderRadius: 10,
-          backgroundColor: connected ? "#b91c1c" : "#065f46",
+          fontSize: 22,
+          fontWeight: "800",
           marginBottom: 12,
         }}
       >
-        <Text style={{ color: "white", textAlign: "center", fontWeight: "800" }}>
-          {connected ? "Disconnect" : "Connect"}
-        </Text>
-      </Pressable>
-
-      <Pressable
-        onPressIn={() => setTouchActive(true)}
-        onPressOut={() => setTouchActive(false)}
-        style={{
-          padding: 18,
-          borderRadius: 12,
-          backgroundColor: touchActive ? "#2563eb" : "#111827",
-          marginBottom: 14,
-        }}
-      >
-        <Text style={{ color: "white", textAlign: "center" }}>
-          Hold = Touch Sensor Active
-        </Text>
-      </Pressable>
-
-      <Text style={{ fontSize: 18, fontWeight: "900" }}>State: {latest.state}</Text>
-      <Text>Transition: {transitionText}</Text>
-      <Text>Action: {actionText}</Text>
-      <Text style={{ marginTop: 6 }}>
-        Sync: {String(latest.decision?.sync)} ({latest.decision?.reason ?? "—"})
+        Autonomous Sync
       </Text>
 
-      <View style={{ marginTop: 14, padding: 12, borderWidth: 1, borderColor: "#333", borderRadius: 12 }}>
-        <Text style={{ fontWeight: "900" }}>Live Telemetry</Text>
-        <Text>Recv Rate: {pps} msg/sec</Text>
-        <Text>Water: {waterText}</Text>
-        <Text>Stable(ms): {latest?.temporal?.stable_duration_ms ?? "—"}</Text>
-        <Text>
-          acc_norm: {f(latest?.features?.acc_norm)} | gyr_norm: {f(latest?.features?.gyr_norm)}
-        </Text>
-        <Text>
-          jerk: {f(latest?.features?.jerk)} | stability: {f(latest?.features?.stability)}
-        </Text>
-      </View>
+      <ControlPanel
+        configured={configured}
+        connected={connected}
+        onConnectToggle={() =>
+          connected ? disconnect() : connect(false)
+        }
+        touchActive={touchActive}
+        setTouchActive={setTouchActive}
+      />
 
-      <View style={{ marginTop: 12, padding: 12, borderWidth: 1, borderColor: "#333", borderRadius: 12 }}>
-        <Text style={{ fontWeight: "900" }}>Emergency</Text>
-        <Text>
-          Snapshot:{" "}
-          {latest?.emergency?.type ? `${latest.emergency.type} (${latest.emergency.state})` : "—"}
-        </Text>
-      </View>
+      <StatePanel
+        latest={latest}
+        transitionText={transitionText}
+        actionText={actionText}
+      />
+
+      <TelemetryPanel
+        pps={pps}
+        latest={latest}
+        waterText={waterText}
+        f={f}
+      />
+
+      <BatteryPanel
+        batteryLevel={batteryLevel}
+        batteryState={batteryState}
+        drainRate={drainRate}
+      />
+
+      <ConnectivityPanel
+        connected={connected}
+        registered={registered}
+        pps={pps}
+        reconnecting={reconnecting}
+      />
+
+      <EmergencyPanel latest={latest} />
 
       <Text style={{ marginTop: 16, color: "#666" }}>
         Connected to secure AWS cloud infrastructure.
       </Text>
+
       <SettingsModal
         visible={showSettings}
-        onClose={() => setShowSettings(false)}
+        onClose={() => {
+          if (!deviceName.trim()) return;
+          setShowSettings(false);
+        }}
         deviceName={deviceName}
         setDeviceName={setDeviceName}
       />
