@@ -52,11 +52,12 @@ def _get_jwt() -> str:
 
 def send_push(
     device_uid: str,
-    title: str,
-    body: str,
+    title: str | None,
+    body: str | None,
     data: dict | None = None,
-) -> bool:
-
+    silent: bool = False,
+) -> dict:
+    
     record = get_device(device_uid)
     if not record:
         print(f"[push] no device registered: {device_uid}")
@@ -65,19 +66,33 @@ def send_push(
     token = record["token"]
     jwt_token = _get_jwt()
 
-    payload = {
-        "aps": {
-            "alert": {"title": title, "body": body},
-            "sound": "default",
-        },
-        "custom": data or {},
-    }
+    if silent:
+        payload = {
+            "aps": {
+                "content-available": 1
+            },
+            "custom": data or {},
+        }
+        push_type = "background"
+        priority = "5"
+    else:
+        payload = {
+            "aps": {
+                "alert": {"title": title, "body": body},
+                "sound": "default",
+            },
+            "custom": data or {},
+        }
+        push_type = "alert"
+        priority = "10"
 
     headers = {
         "authorization": f"bearer {jwt_token}",
         "apns-topic": APNS_TOPIC,
-        "apns-push-type": "alert",
-        "apns-priority": "10",
+        "apns-push-type": push_type,
+        "apns-priority": priority,
+        "apns-expiration": str(int(time.time()) + (300 if silent else 3600)),
+        "apns-collapse-id": device_uid,
     }
 
     try:

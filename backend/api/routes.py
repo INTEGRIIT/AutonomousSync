@@ -10,11 +10,44 @@ from backend.push.sender import send_push
 
 import time
 import os
+import re
+from typing import Optional
 
 router = APIRouter()
 
-LOG_PATH = os.path.join("logs", "sensor_stream.jsonl")
-store = JSONLStore(LOG_PATH)
+# =========================================================
+# LOGGING PATHS
+# =========================================================
+
+LOG_DIR = "logs"
+UNIFIED_LOG_PATH = os.path.join(LOG_DIR, "sensor_stream.jsonl")
+DEVICES_DIR = os.path.join(LOG_DIR, "devices")
+
+# Keep a unified stream log (recommended for global auditing)
+unified_store = JSONLStore(UNIFIED_LOG_PATH)
+
+# Ensure device log folder exists
+os.makedirs(DEVICES_DIR, exist_ok=True)
+
+
+def safe_filename(s: str) -> str:
+    """
+    Enterprise safety: prevent path traversal / weird characters in filenames.
+    Allows: a-zA-Z0-9._-
+    """
+    s = (s or "").strip()
+    s = re.sub(r"[^a-zA-Z0-9._-]", "_", s)
+    return s[:120] or "unknown"
+
+
+def read_last_jsonl_lines(path: str, n: int) -> list[dict]:
+    if not os.path.exists(path):
+        return []
+    n = max(1, min(5000, n))
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [loads(x) for x in f.readlines()[-n:] if x.strip()]
+    return lines
+
 
 # =========================================================
 # HTTP ROUTES
@@ -38,13 +71,20 @@ def timeline(n: int = 120):
 
 @router.get("/logs/recent")
 def logs_recent(n: int = 50):
-    if not os.path.exists(LOG_PATH):
-        return {"items": []}
+    """
+    Unified log tail (all devices).
+    """
+    return {"items": read_last_jsonl_lines(UNIFIED_LOG_PATH, n)}
 
-    with open(LOG_PATH, "r", encoding="utf-8") as f:
-        lines = [loads(x) for x in f.readlines()[-n:] if x.strip()]
 
-    return {"items": lines}
+@router.get("/logs/device/{device_uid}")
+def logs_device(device_uid: str, n: int = 200):
+    """
+    Per-device log tail.
+    """
+    uid = safe_filename(device_uid)
+    device_path = os.path.join(DEVICES_DIR, f"{uid}.jsonl")
+    return {"device_uid": device_uid, "items": read_last_jsonl_lines(device_path, n)}
 
 
 # =========================================================
@@ -59,27 +99,28 @@ async def push_register(payload: dict):
     platform = payload.get("platform")
 
     register_device(device_uid, device_name, token, platform)
+    return {"ok": True, "device_uid": device_uid, "device_name": device_name}
 
 
 # =========================================================
-# PUSH TEST (SYNC — FIXED)
+# PUSH TEST
 # =========================================================
 
 @router.post("/push/test")
 def test_push(data: dict):
     device_uid = data.get("device_uid")
+    if not device_uid:
+        return {"ok": False, "error": "device_uid_required"}
 
     ok = send_push(
         device_uid=device_uid,
         title="🔔 Push Test",
         body="If you see this, backend push logic is firing.",
         data={"test": True},
+        silent=False,
     )
 
-    return {
-        "ok": ok,
-        "device_uid": device_uid,
-    }
+    return {"ok": bool(ok), "device_uid": device_uid}
 
 
 # =========================================================
@@ -99,11 +140,21 @@ def list_push_devices():
 async def ws_stream(ws: WebSocket):
     await ws.accept()
 
+    # Create per-socket device store lazily on first packet (once we know device_uid)
+    device_store: Optional[JSONLStore] = None
+    device_uid_for_log: Optional[str] = None
+
     try:
         while True:
             raw = await ws.receive_text()
             data = loads(raw)
             packet = SensorPacket(**data)
+
+            # Init per-device log store ONCE
+            if device_store is None:
+                device_uid_for_log = safe_filename(packet.device_uid)
+                device_log_path = os.path.join(DEVICES_DIR, f"{device_uid_for_log}.jsonl")
+                device_store = JSONLStore(device_log_path)
 
             acc = vec3_to_np(packet.accel) if packet.accel else None
             gyr = vec3_to_np(packet.gyro) if packet.gyro else None
@@ -116,16 +167,10 @@ async def ws_stream(ws: WebSocket):
             touch_active = bool(packet.touch.active) if packet.touch else False
             moisture_val = packet.moisture.value if packet.moisture else None
 
-            temporal = runtime.temporal.update(
-                packet.ts, feats, touch_active, moisture_val
-            )
-
+            temporal = runtime.temporal.update(packet.ts, feats, touch_active, moisture_val)
             water = runtime.water.infer(temporal)
 
-            state = runtime.sm.classify(
-                feats, temporal, water, touch_active
-            ).value
-
+            state = runtime.sm.classify(feats, temporal, water, touch_active).value
             transition = runtime.state_transition.update(state)
 
             emergency_intent = None
@@ -143,6 +188,8 @@ async def ws_stream(ws: WebSocket):
             )
 
             action = None
+            push_ok = None
+
             if decision.get("sync"):
                 action = snapshot_action({
                     "device_uid": packet.device_uid,
@@ -153,13 +200,12 @@ async def ws_stream(ws: WebSocket):
                 })
 
                 if decision.get("notify"):
-                    send_push(
+                    push_ok = send_push(
                         device_uid=packet.device_uid,
-                        title="⚠️ Emergency Backup"
-                        if decision.get("type") == "EMERGENCY"
-                        else "Autonomous Sync",
+                        title="⚠️ Emergency Backup" if decision.get("type") == "EMERGENCY" else "Autonomous Sync",
                         body=decision.get("reason", "Snapshot captured"),
                         data={"state": state},
+                        silent=False,
                     )
 
             out = {
@@ -173,14 +219,27 @@ async def ws_stream(ws: WebSocket):
                 "temporal": temporal,
                 "water": water,
                 "emergency": emergency_intent,
+                "push": {"sent": bool(push_ok)} if push_ok is not None else None,
             }
 
             runtime.latest = out
             runtime.timeline.append(out)
             runtime.timeline = runtime.timeline[-250:]
 
-            store.append({"in": data, "out": out})
+            # Write BOTH:
+            # 1) unified log
+            unified_store.append({"in": data, "out": out})
+            # 2) per-device log
+            device_store.append({"in": data, "out": out})
+
             await ws.send_text(dumps(out))
 
     except WebSocketDisconnect:
+        return
+    except Exception as e:
+        # Don't crash silently; surface something useful
+        try:
+            await ws.send_text(dumps({"error": "server_exception", "detail": str(e)}))
+        except Exception:
+            pass
         return

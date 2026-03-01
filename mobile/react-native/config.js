@@ -37,5 +37,5 @@ export const API_HOST = ACTIVE.API_HOST;
 export const API_PORT = ACTIVE.API_PORT;
 export const WS_PROTOCOL = ACTIVE.WS_PROTOCOL;
 
-export const BASE_URL = `http://${API_HOST}:${API_PORT}`;
+export const BASE_URL = `https://${API_HOST}:${API_PORT}`;
 export const WS_URL = `${WS_PROTOCOL}://${API_HOST}:${API_PORT}`;

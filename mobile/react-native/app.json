@@ -14,7 +14,10 @@
         }
       }
     },
-    "plugins": ["expo-notifications"],
+    "plugins": [
+      "expo-notifications",
+      "expo-secure-store"
+    ],
     "android": {
       "package": "com.anonymous.autonomoussync"
     },

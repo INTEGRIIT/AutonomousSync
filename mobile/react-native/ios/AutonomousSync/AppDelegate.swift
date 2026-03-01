@@ -44,38 +44,7 @@ public class AppDelegate: ExpoAppDelegate {
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
-
-  // APNS SUCCESS CALLBACK
-  public override func application(
-    _ application: UIApplication,
-    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
-  ) {
-      let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
-
-      print("APNS TOKEN:", token)
-      print("TOKEN LENGTH:", token.count)
-
-      guard let url = URL(string: "http://3.80.27.210:8012/push/register") else { return }
-
-      let payload: [String: Any] = [
-          "device_id": UIDevice.current.name,
-          "push_token": token,
-          "platform": "ios"
-      ]
-
-      var request = URLRequest(url: url)
-      request.httpMethod = "POST"
-      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-      request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-
-      URLSession.shared.dataTask(with: request) { data, response, error in
-          if let error = error {
-              print("❌ Push register error:", error)
-          } else {
-              print("✅ Push register success")
-          }
-      }.resume()
-  }
+  
   // APNS FAILURE CALLBACK
   public override func application(
     _ application: UIApplication,

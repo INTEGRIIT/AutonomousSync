@@ -1,8 +1,10 @@
+import "react-native-get-random-values";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView } from "react-native";
 import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
 import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
+import * as SecureStore from "expo-secure-store";
+import { v4 as uuidv4 } from "uuid";
 
 async function registerForAPNsAsync() {
   const { status } = await Notifications.getPermissionsAsync();
@@ -24,6 +26,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
+const WS_PORT = 8012;
 const SEND_INTERVAL_MS = 60;
 const SENSOR_ACCEL_MS = 50;
 const SENSOR_GYRO_MS = 50;
@@ -44,20 +47,37 @@ export default function App() {
   // ✅ De-dupe key so “same event frame” doesn’t spam
   const lastNotifyKeyRef = useRef(null);
 
-  // ✅ Push registration guard (prevents re-register spam when editing IP / deviceId)
-  const hasRegisteredRef = useRef(false);
-
-
-  // ✅ Diamond-tier default: unique deviceId per phone (teammates won’t overwrite each other)
-  // Still editable in the UI if you want a specific ID for demos.
-  const [deviceId, setDeviceId] = useState(
-    `${Device.modelName || "ios"}-${Math.random().toString(36).slice(2, 8)}`
-  );
-
+  const [deviceUid, setDeviceUid] = useState(null);
+  const [deviceName, setDeviceName] = useState("My iPhone");
   const [connected, setConnected] = useState(false);
   const [touchActive, setTouchActive] = useState(false);
-  // ❤️ Heartbeat (JS thread liveness)
+    // ❤️ Heartbeat (JS thread liveness)
   const [heartbeat, setHeartbeat] = useState(0);
+
+  useEffect(() => {
+    const initUid = async () => {
+      try {
+        console.log("INIT START");
+
+        let stored = await SecureStore.getItemAsync("device_uid");
+        console.log("SECURESTORE RETURN:", stored);
+
+        if (!stored) {
+          console.log("GENERATING UUID");
+          stored = uuidv4();
+          await SecureStore.setItemAsync("device_uid", stored);
+        }
+
+        console.log("SETTING UID:", stored);
+        setDeviceUid(stored);
+
+      } catch (e) {
+        console.log("INIT ERROR:", e);
+      }
+    };
+
+    initUid();
+  }, []);
 
   const [latest, setLatest] = useState({
     state: "—",
@@ -72,6 +92,7 @@ export default function App() {
   const magRef = useRef({ x: 0, y: 0, z: 0 });
 
   const wsUrl = useMemo(() => `wss://api.autonomous-sync.com/ws/stream`, []);
+
   // ❤️ Heartbeat ticker (1Hz)
   useEffect(() => {
     console.log("🟢 Heartbeat effect mounted");
@@ -99,38 +120,6 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    // ✅ Prevent re-registering push every time IP/deviceId changes (still can be done manually by reloading app)
-    if (hasRegisteredRef.current) return;
-    hasRegisteredRef.current = true;
-
-    (async () => {
-      const apnsToken = await registerForAPNsAsync();
-
-      if (!apnsToken) {
-        console.warn("❌ APNs token unavailable");
-        return;
-      }
-
-      console.log("✅ APNs token:", apnsToken);
-
-      try {
-        await fetch(`https://api.autonomous-sync.com/push/register`, {          
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            device_id: deviceId,
-            push_token: apnsToken, // 🔑 REAL APNs TOKEN
-            platform: "ios",
-          }),
-        });
-
-        console.log("📡 Push register status:", res.status);
-      } catch (err) {
-        console.log("❌ Push register failed:", err);
-      }
-    })();
-  }, [ip, deviceId]);
 
   /* ---------------- Sensors ---------------- */
 
@@ -184,6 +173,8 @@ export default function App() {
     sendTimerRef.current = setInterval(() => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== 1) return;
+      if (!deviceUid) return;
+
 
       const now = Date.now();
       if (now - lastSendTsRef.current < SEND_INTERVAL_MS - 5) return;
@@ -192,7 +183,7 @@ export default function App() {
       ws.send(
         JSON.stringify({
           ts: now,
-          device_id: deviceId,
+          device_uid: deviceUid,
           accel: accRef.current,
           gyro: gyrRef.current,
           mag: magRef.current,
@@ -212,11 +203,58 @@ export default function App() {
     }, 900);
   };
 
-  const connect = (isReconnect = false) => {
+
+
+  const connect = async (isReconnect = false) => {
+    if (!deviceUid) {
+      console.warn("Device UID not ready yet");
+      return;
+    }
+
+    if (deviceName.trim().length === 0) {
+      console.warn("Device name required");
+      return;
+    }
+
+    // 1️⃣ Get APNs token
+    const apnsToken = await registerForAPNsAsync();
+
+    if (!apnsToken) {
+      console.warn("❌ APNs token unavailable");
+      return;
+    }
+
+    console.log("✅ APNs token:", apnsToken);
+
+    // 2️⃣ Register with backend
+    const res = await fetch(
+      "https://api.autonomous-sync.com/push/register",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          device_uid: deviceUid,
+          device_name: deviceName.trim(),
+          push_token: apnsToken,
+          platform: "ios",
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      console.warn("Push registration failed:", await res.text());
+      return;
+    }
+
+    console.log("📡 Push registered successfully");
+
+    // 3️⃣ Open WebSocket
     console.log("🔗 Attempting WS URL:", wsUrl);
+
     if (wsRef.current && [0, 1].includes(wsRef.current.readyState)) return;
 
     cleanupTimers();
+
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -225,8 +263,13 @@ export default function App() {
       startSendLoop();
     };
 
+
     ws.onclose = (e) => {
-      console.log("🔴 WS CLOSED", e.code, e.reason);
+      console.log("🔴 WS CLOSED");
+      console.log("WS CLOSED CODE:", e.code);
+      console.log("WS CLOSED REASON:", e.reason);
+      console.log("WAS CLEAN:", e.wasClean);
+
       setConnected(false);
       cleanupTimers();
       wsRef.current = null;
@@ -281,44 +324,16 @@ export default function App() {
   /* ---------------- UI ---------------- */
 
   return (
-    <ScrollView
-      style={{ backgroundColor: "#ffffff" }}
-      contentContainerStyle={{
-        flexGrow: 1,
-        padding: 18,
-        justifyContent: "center",
-      }}
-    >
+    <ScrollView style={{ backgroundColor: "#ffffff" }} contentContainerStyle={{ flexGrow: 1, padding: 18, justifyContent: "center" }}>
       <Text style={{ fontSize: 22, fontWeight: "800", marginBottom: 12 }}>
         Autonomous Sync
       </Text>
 
-      <Text>Backend IP (LAN):</Text>
+      <Text>Device Name:</Text>
       <TextInput
-        value={ip}
-        onChangeText={setIp}
-        style={{
-          borderWidth: 1,
-          borderColor: "#444",
-          padding: 10,
-          borderRadius: 10,
-          marginBottom: 10,
-        }}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-
-      <Text>Device ID:</Text>
-      <TextInput
-        value={deviceId}
-        onChangeText={setDeviceId}
-        style={{
-          borderWidth: 1,
-          borderColor: "#444",
-          padding: 10,
-          borderRadius: 10,
-          marginBottom: 10,
-        }}
+        value={deviceName}
+        onChangeText={setDeviceName}
+        style={{ borderWidth: 1, borderColor: "#444", padding: 10, borderRadius: 10, marginBottom: 10 }}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -336,7 +351,7 @@ export default function App() {
         }}
       >
         <Text style={{ color: "white", textAlign: "center", fontWeight: "800" }}>
-          {connected ? "Disconnect" : "Connect"} (Production)
+          {connected ? "Disconnect" : "Connect"}
         </Text>
       </Pressable>
 
@@ -362,49 +377,29 @@ export default function App() {
         Sync: {String(latest.decision?.sync)} ({latest.decision?.reason ?? "—"})
       </Text>
 
-      <View
-        style={{
-          marginTop: 14,
-          padding: 12,
-          borderWidth: 1,
-          borderColor: "#333",
-          borderRadius: 12,
-        }}
-      >
+      <View style={{ marginTop: 14, padding: 12, borderWidth: 1, borderColor: "#333", borderRadius: 12 }}>
         <Text style={{ fontWeight: "900" }}>Live Telemetry</Text>
         <Text>Recv Rate: {pps} msg/sec</Text>
         <Text>Water: {waterText}</Text>
         <Text>Stable(ms): {latest?.temporal?.stable_duration_ms ?? "—"}</Text>
         <Text>
-          acc_norm: {f(latest?.features?.acc_norm)} | gyr_norm:{" "}
-          {f(latest?.features?.gyr_norm)}
+          acc_norm: {f(latest?.features?.acc_norm)} | gyr_norm: {f(latest?.features?.gyr_norm)}
         </Text>
         <Text>
-          jerk: {f(latest?.features?.jerk)} | stability:{" "}
-          {f(latest?.features?.stability)}
+          jerk: {f(latest?.features?.jerk)} | stability: {f(latest?.features?.stability)}
         </Text>
       </View>
 
-      <View
-        style={{
-          marginTop: 12,
-          padding: 12,
-          borderWidth: 1,
-          borderColor: "#333",
-          borderRadius: 12,
-        }}
-      >
+      <View style={{ marginTop: 12, padding: 12, borderWidth: 1, borderColor: "#333", borderRadius: 12 }}>
         <Text style={{ fontWeight: "900" }}>Emergency</Text>
         <Text>
           Snapshot:{" "}
-          {latest?.emergency?.type
-            ? `${latest.emergency.type} (${latest.emergency.state})`
-            : "—"}
+          {latest?.emergency?.type ? `${latest.emergency.type} (${latest.emergency.state})` : "—"}
         </Text>
       </View>
 
       <Text style={{ marginTop: 16, color: "#666" }}>
-        Tip: Backend must be running on port 8012. Phone + Mac on same Wi-Fi.
+        Connected to secure AWS cloud infrastructure.
       </Text>
     </ScrollView>
   );

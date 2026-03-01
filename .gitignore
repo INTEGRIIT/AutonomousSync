@@ -65,3 +65,15 @@ DemoClips/
 # APNS Keys (DO NOT COMMIT)
 backend/apns/
 *.p8
+
+# Node
+node_modules/
+mobile/react-native/node_modules/
+
+# Lockfiles (optional but recommended)
+package-lock.json
+mobile/react-native/package-lock.json
+
+# iOS
+mobile/react-native/ios/Pods/
+mobile/react-native/ios/Podfile.lock
