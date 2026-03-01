@@ -10,23 +10,13 @@ import websockets
 
 
 def _get_path(websocket, maybe_path):
-    """
-    websockets library changed handler signatures across versions:
-      - some call handler(websocket)
-      - older call handler(websocket, path)
-
-    This makes us compatible with both.
-    """
     if maybe_path:
         return maybe_path
 
-    # Try common attributes across versions
-    for attr in ("path",):
-        v = getattr(websocket, attr, None)
-        if isinstance(v, str) and v:
-            return v
+    v = getattr(websocket, "path", None)
+    if isinstance(v, str) and v:
+        return v
 
-    # Newer versions may store request info differently
     req = getattr(websocket, "request", None)
     if req is not None:
         p = getattr(req, "path", None)
@@ -39,7 +29,6 @@ def _get_path(websocket, maybe_path):
 async def _send_file_history(ws, file_path: str):
     name = Path(file_path).name
     try:
-        # stream file contents line by line (safe for large files)
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.rstrip("\n")
@@ -50,13 +39,8 @@ async def _send_file_history(ws, file_path: str):
 
 
 async def _tail_file(ws, file_path: str):
-    """
-    tails a file and streams new lines as they arrive.
-    """
     name = Path(file_path).name
 
-    # -n 0 => start at end (live only)
-    # -F => follow name (handles rotate)
     proc = await asyncio.create_subprocess_exec(
         "tail", "-n", "0", "-F", file_path,
         stdout=asyncio.subprocess.PIPE,
@@ -84,50 +68,49 @@ async def _tail_file(ws, file_path: str):
 
 
 async def stream_logs(websocket, path=None, *, log_dir: str):
-    # ✅ signature-safe
     path = _get_path(websocket, path)
 
     parsed = urlparse(path)
     params = parse_qs(parsed.query)
-    mode = (params.get("mode", ["live"])[0] or "live").lower()  # default live
 
-    # Gather all log files from folder
-    files = sorted(
-        str(Path(log_dir) / f)
-        for f in os.listdir(log_dir)
-        if os.path.isfile(os.path.join(log_dir, f))
-    )
+    mode = (params.get("mode", ["live"])[0] or "live").lower()
+    device_filter = params.get("device", [None])[0]
 
-    await websocket.send(f"✅ Connected. mode={mode}. files={len(files)}")
-    if not files:
-        await websocket.send("⚠️ No log files found in devices folder.")
-        return
+    await websocket.send(f"✅ Connected. mode={mode}. device_filter={device_filter}")
 
-    # 🥈 Mode 2: dump history then stream
-    if mode == "full":
-        await websocket.send("📦 MODE=full: dumping existing logs first...")
-        for fp in files:
-            await _send_file_history(websocket, fp)
-        await websocket.send("------ LIVE STREAM STARTED ------")
+    active_tails = {}
+    known_files = set()
 
-    # 🥇 Mode 1: live only
-    tails = []
-    try:
-        for fp in files:
-            tails.append(asyncio.create_task(_tail_file(websocket, fp)))
-
-        # wait until client disconnects or task errors
-        done, pending = await asyncio.wait(
-            tails,
-            return_when=asyncio.FIRST_EXCEPTION,
+    async def scan_and_tail():
+        files = sorted(
+            str(Path(log_dir) / f)
+            for f in os.listdir(log_dir)
+            if os.path.isfile(os.path.join(log_dir, f))
         )
-        for t in done:
-            exc = t.exception()
-            if exc:
-                raise exc
+
+        for fp in files:
+            name = Path(fp).name
+
+            if device_filter and device_filter not in name:
+                continue
+
+            if fp not in known_files:
+                known_files.add(fp)
+
+                if mode == "full":
+                    await _send_file_history(websocket, fp)
+
+                task = asyncio.create_task(_tail_file(websocket, fp))
+                active_tails[fp] = task
+                await websocket.send(f"📡 Now streaming: {name}")
+
+    try:
+        while True:
+            await scan_and_tail()
+            await asyncio.sleep(1)
     finally:
-        for t in tails:
-            t.cancel()
+        for task in active_tails.values():
+            task.cancel()
 
 
 async def main(host: str, port: int, log_dir: str):
@@ -138,7 +121,7 @@ async def main(host: str, port: int, log_dir: str):
     print(f"📁 Log dir: {log_dir}")
 
     async with websockets.serve(handler, host, port):
-        await asyncio.Future()  # run forever
+        await asyncio.Future()
 
 
 if __name__ == "__main__":
@@ -148,7 +131,6 @@ if __name__ == "__main__":
     parser.add_argument("--log-dir", default="/home/ubuntu/AutonomousSync/logs/devices")
     args = parser.parse_args()
 
-    # nicer shutdown
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: (_ for _ in ()).throw(SystemExit))
 

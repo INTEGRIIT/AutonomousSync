@@ -2,6 +2,7 @@ import asyncio
 import websockets
 import sys
 import signal
+import os
 
 # ===============================
 # CONFIG
@@ -9,6 +10,7 @@ import signal
 
 EC2_IP = "3.80.27.210"
 PORT = 8766
+LOCAL_DIR = "logs/devices"
 
 # ===============================
 # ARGUMENT PARSING
@@ -37,12 +39,28 @@ EC2_WS = f"ws://{EC2_IP}:{PORT}{query}"
 async def listen():
     print(f"🔌 Connecting to {EC2_WS}")
 
+    os.makedirs(LOCAL_DIR, exist_ok=True)
+
     try:
         async with websockets.connect(EC2_WS) as ws:
             print(f"🟢 Connected in {mode.upper()} mode\n")
 
             async for message in ws:
                 print(message)
+
+                # ---------------------------------
+                # Mirror files locally
+                # ---------------------------------
+                if message.startswith("[") and "]" in message:
+                    # Extract filename
+                    filename = message.split("]")[0].strip("[")
+                    content = message.split("] ", 1)[1]
+
+                    local_path = os.path.join(LOCAL_DIR, filename)
+
+                    # Append line to local file
+                    with open(local_path, "a", encoding="utf-8") as f:
+                        f.write(content + "\n")
 
     except Exception as e:
         print("❌ Connection error:", e)

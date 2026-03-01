@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text } from "react-native";
+import * as Battery from "expo-battery";
 
 export default function BatteryPanel({
   batteryLevel,
@@ -18,6 +19,20 @@ export default function BatteryPanel({
     return "#ef4444";
   };
 
+  const getStateLabel = () => {
+    switch (batteryState) {
+      case Battery.BatteryState.CHARGING:
+        return "Charging";
+      case Battery.BatteryState.FULL:
+        return "Full";
+      case Battery.BatteryState.UNPLUGGED:
+        return "Unplugged";
+      case Battery.BatteryState.UNKNOWN:
+      default:
+        return "Unknown";
+    }
+  };
+
   return (
     <View
       style={{
@@ -34,9 +49,11 @@ export default function BatteryPanel({
         Level: {levelPercent !== null ? `${levelPercent}%` : "—"}
       </Text>
 
-      <Text>State: {batteryState ?? "—"}</Text>
+      <Text>State: {getStateLabel()}</Text>
 
-      <Text>Drain Rate: {drainRate ?? "—"} %/min</Text>
+      <Text>
+        Drain Rate: {drainRate !== null ? `${drainRate} %/min` : "—"}
+      </Text>
     </View>
   );
 }

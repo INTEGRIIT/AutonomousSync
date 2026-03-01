@@ -61,7 +61,7 @@ export default function App() {
   const [configured, setConfigured] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [deviceUid, setDeviceUid] = useState(null);
-  const [deviceName, setDeviceName] = useState("My iPhone");
+  const [deviceName, setDeviceName] = useState("");
   const [connected, setConnected] = useState(false);
   const [touchActive, setTouchActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -110,8 +110,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🔐 Persist device name whenever it changes
-  // 🔐 Persist device name whenever it changes
   // 🔐 Persist device name whenever it changes
   useEffect(() => {
     const save = async () => {
@@ -198,9 +196,9 @@ export default function App() {
 
   const wsUrl = useMemo(() => `wss://api.autonomous-sync.com/ws/stream`, []);
 
-  // ❤️ Heartbeat ticker (1Hz)
+  // Heartbeat ticker (1Hz)
   useEffect(() => {
-    console.log("🟢 Heartbeat effect mounted");
+    //console.log("🟢 Heartbeat effect mounted");
 
     const t = setInterval(() => {
       setHeartbeat((h) => h + 1);
@@ -331,7 +329,7 @@ export default function App() {
       return;
     }
 
-    console.log("✅ APNs token:", apnsToken);
+    //console.log("✅ APNs token:", apnsToken);
 
     // 2️⃣ Register with backend
     const res = await fetch(
