@@ -321,7 +321,7 @@ export default function App() {
       return;
     }
 
-    // 1️⃣ Get APNs token
+    // 1 Get APNs token
     const apnsToken = await registerForAPNsAsync();
 
     if (!apnsToken) {
@@ -331,7 +331,7 @@ export default function App() {
 
     //console.log("✅ APNs token:", apnsToken);
 
-    // 2️⃣ Register with backend
+    // 2 Register with backend
     const res = await fetch(
       "https://api.autonomous-sync.com/push/register",
       {
@@ -356,7 +356,7 @@ export default function App() {
     await SecureStore.setItemAsync("push_registered", "1");
     hydratedNameRef.current = deviceName.trim();
 
-    // 3️⃣ Open WebSocket
+    // 3 Open WebSocket
     console.log("🔗 Attempting WS URL:", wsUrl);
 
     if (wsRef.current && [0, 1].includes(wsRef.current.readyState)) return;
