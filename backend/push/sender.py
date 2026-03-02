@@ -92,7 +92,7 @@ def send_push(
         "apns-push-type": push_type,
         "apns-priority": priority,
         "apns-expiration": str(int(time.time()) + (300 if silent else 3600)),
-        "apns-collapse-id": device_uid,
+
     }
 
     try:
