@@ -5,7 +5,9 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-
+# =========================================================
+# PYTHON COMPAT FIX
+# =========================================================
 for name in (
     "Mapping",
     "MutableMapping",
@@ -16,19 +18,32 @@ for name in (
 ):
     if not hasattr(collections, name):
         setattr(collections, name, getattr(collections.abc, name))
-        
+
 if not hasattr(collections, "MutableSet"):
     collections.MutableSet = collections.abc.MutableSet
 
-# LOAD ENV VARIABLES (ABSOLUTE PATH — NO GUESSING)
+# =========================================================
+# LOAD ENV
+# =========================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-from backend.api.routes import router as api_router
+# =========================================================
+# IMPORT ROUTERS
+# =========================================================
+from backend.api.routesold import router as api_router
+from backend.api.fileRoutes import router as file_router  # 🔥 NEW
 
+# =========================================================
+# APP INIT
+# =========================================================
 app = FastAPI(
     title="Autonomous Sync Engine",
     version="1.0.0",
 )
 
+# =========================================================
+# REGISTER ROUTERS
+# =========================================================
 app.include_router(api_router)
+app.include_router(file_router)  # 🔥 NEW

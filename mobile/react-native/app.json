@@ -19,7 +19,14 @@
       "expo-secure-store"
     ],
     "android": {
-      "package": "com.anonymous.autonomoussync"
+      "package": "com.anonymous.autonomoussync",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_DATA_SYNC",
+        "POST_NOTIFICATIONS",
+        "WAKE_LOCK"
+      ]
     },
     "extra": {
       "eas": {

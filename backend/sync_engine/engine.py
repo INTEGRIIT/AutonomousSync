@@ -10,7 +10,7 @@ class SyncEngine:
         self.last_sync_ms = 0
         self.last_emergency_ms = 0
 
-        # NEW: prevents repeated snapshots while stable
+        # Prevent repeated graceful triggers
         self._graceful_fired = False
 
     def decide(
@@ -19,29 +19,42 @@ class SyncEngine:
         stable_duration_ms: int,
         emergency: dict | None = None,
     ) -> dict:
-        """
-        Decide whether to trigger a sync.
-
-        - Emergency sync: physics-driven, overrides all gates
-        - Graceful sync: ONE snapshot per stable episode
-        """
 
         t = now_ms()
 
-        # -------------------------------------------------
-        # EMERGENCY OVERRIDE (DROP / WATER / IMPACT)
-        # -------------------------------------------------
+        # =================================================
+        # 🔥 DEBUG VISIBILITY (CRITICAL)
+        # =================================================
+        print("🧠 ENGINE INPUT:", {
+            "state": state,
+            "stable_duration_ms": stable_duration_ms,
+            "emergency": emergency,
+        })
+
+        # =================================================
+        # 🚨 EMERGENCY PATH (PRIORITY SYSTEM)
+        # =================================================
         if emergency:
+
+            print("🚨 EMERGENCY DETECTED:", emergency)
+
+            # 🔥 TEMP: DISABLE COOLDOWN FOR TESTING
+            # Comment this back later for production
+            """
             if t - self.last_emergency_ms < self.policy.emergency_cooldown_ms:
+                print("⛔ BLOCKED: emergency cooldown")
                 return {
                     "sync": False,
                     "reason": "emergency_cooldown",
                     "type": "EMERGENCY",
                 }
+            """
+
+            print("🔥 EMERGENCY SYNC TRIGGERED")
 
             self.last_emergency_ms = t
             self.last_sync_ms = t
-            self._graceful_fired = False  # reset episode
+            self._graceful_fired = False
 
             return {
                 "sync": True,
@@ -51,12 +64,12 @@ class SyncEngine:
                 "notify": True,
             }
 
-        # -------------------------------------------------
-        # GRACEFUL / STABILITY PATH
-        # -------------------------------------------------
+        # =================================================
+        # 🧘 GRACEFUL PATH
+        # =================================================
 
-        # Motion or interaction resets stable episode
         if state in ("UNSTABLE", "MOVING", "USER_INTERACTION", "WATER_INTERACTION"):
+            print("⛔ BLOCKED: unstable state", state)
             self._graceful_fired = False
             return {
                 "sync": False,
@@ -64,32 +77,35 @@ class SyncEngine:
                 "type": "GRACEFUL",
             }
 
-        # Require minimum stability proof
         if stable_duration_ms < self.policy.require_stable_ms:
+            print("⛔ BLOCKED: not stable long enough", stable_duration_ms)
             return {
                 "sync": False,
                 "reason": f"not_stable_long_enough:{stable_duration_ms}ms",
                 "type": "GRACEFUL",
             }
 
-        # Cooldown (still applies)
         if t - self.last_sync_ms < self.policy.cooldown_ms:
+            print("⛔ BLOCKED: cooldown")
             return {
                 "sync": False,
                 "reason": "cooldown",
                 "type": "GRACEFUL",
             }
 
-        # Already snapped during this stable episode
         if self._graceful_fired:
+            print("⛔ BLOCKED: already fired")
             return {
                 "sync": False,
                 "reason": "already_synced_this_stable_episode",
                 "type": "GRACEFUL",
             }
-        
 
-        # FIRE ONCE
+        # =================================================
+        # ✅ FIRE GRACEFUL
+        # =================================================
+        print("✅ GRACEFUL SYNC TRIGGERED")
+
         self.last_sync_ms = t
         self._graceful_fired = True
 
