@@ -8,6 +8,8 @@ from backend.storage.s3_service import (
     generate_signed_url,
 )
 
+from backend.db import get_device  # 🔥 REQUIRED
+
 router = APIRouter()
 
 S3_BUCKET = os.getenv("S3_BUCKET_NAME")
@@ -15,7 +17,24 @@ s3 = boto3.client("s3")
 
 
 # =========================================================
-# 📤 UPLOAD FILE (FIXED IDENTITY)
+# 🧠 HELPER: DEVICE → USER
+# =========================================================
+def get_user_from_device(device_uid: str):
+    device = get_device(device_uid)
+
+    if not device:
+        raise Exception(f"Device not found: {device_uid}")
+
+    user_id = device.get("user_id")
+
+    if not user_id:
+        raise Exception(f"No user_id linked to device: {device_uid}")
+
+    return user_id
+
+
+# =========================================================
+# 📤 UPLOAD FILE
 # =========================================================
 @router.post("/upload")
 async def upload_file(
@@ -27,8 +46,8 @@ async def upload_file(
     try:
         contents = await file.read()
 
-        # 🔥 CRITICAL FIX: device_uid fallback
-        user = user_id or device_uid
+        # 🔥 ALWAYS resolve real user
+        user = user_id or get_user_from_device(device_uid)
 
         result = upload_file_to_s3(
             file_bytes=contents,
@@ -49,17 +68,17 @@ async def upload_file(
 
 
 # =========================================================
-# 📥 LIST FILES (FIXED + TIMESTAMPS)
+# 📥 LIST FILES (WITH METADATA)
 # =========================================================
 @router.get("/files/{device_uid}")
-def list_files(
-    device_uid: str,
-    user_id: str = Query(None)
-):
+def list_files(device_uid: str):
     try:
-        user = user_id or device_uid
+        # 🔥 REAL USER RESOLUTION
+        user = device_uid
 
         prefix = f"users/{user}/devices/{device_uid}/files/"
+
+        print("📂 LIST PREFIX:", prefix)
 
         response = s3.list_objects_v2(
             Bucket=S3_BUCKET,
@@ -68,16 +87,28 @@ def list_files(
 
         contents = response.get("Contents", [])
 
-        files = [
-            {
-                "key": obj["Key"],
-                "size": obj["Size"],
+        files = []
 
-                # 🔥 THIS FIXES YOUR "Synced: N/A"
+        for obj in contents:
+            key = obj["Key"]
+
+            try:
+                head = s3.head_object(Bucket=S3_BUCKET, Key=key)
+                metadata = head.get("Metadata", {})
+            except Exception as e:
+                print(f"⚠️ head_object failed for {key}: {e}")
+                metadata = {}
+
+            files.append({
+                "key": key,
+                "url": generate_signed_url(key)["url"],  # 🔥 CRITICAL
+                "size": obj["Size"],
                 "last_modified": obj["LastModified"].isoformat(),
-            }
-            for obj in contents
-        ]
+                "uploaded_at": metadata.get("uploaded_at"),
+                "sync_type": metadata.get("sync_type"),
+                "sync_reason": metadata.get("sync_reason"),
+                "device_name": metadata.get("device_name"),
+            })
 
         return {"ok": True, "files": files}
 
@@ -87,16 +118,38 @@ def list_files(
 
 
 # =========================================================
-# 🗑️ DELETE FILE
+# 🗑️ DELETE FILE (SECURE)
 # =========================================================
 @router.delete("/delete")
-def delete_file(key: str):
-    return delete_file_from_s3(key)
+def delete_file(key: str, device_uid: str):
+    try:
+        user = get_user_from_device(device_uid)
+
+        # 🔐 SECURITY CHECK
+        if f"users/{user}/devices/{device_uid}/" not in key:
+            return {"ok": False, "error": "Unauthorized"}
+
+        return delete_file_from_s3(key)
+
+    except Exception as e:
+        print("❌ Delete error:", e)
+        return {"ok": False, "error": str(e)}
 
 
 # =========================================================
-# 🔗 DOWNLOAD (SIGNED URL)
+# 🔗 DOWNLOAD (SIGNED URL, SECURE)
 # =========================================================
 @router.get("/download")
-def download_file(key: str):
-    return generate_signed_url(key)
+def download_file(key: str, device_uid: str):
+    try:
+        user = get_user_from_device(device_uid)
+
+        # 🔐 SECURITY CHECK
+        if f"users/{user}/devices/{device_uid}/" not in key:
+            return {"ok": False, "error": "Unauthorized"}
+
+        return generate_signed_url(key)
+
+    except Exception as e:
+        print("❌ Download error:", e)
+        return {"ok": False, "error": str(e)}

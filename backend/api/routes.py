@@ -169,10 +169,12 @@ async def upload_file(
 ):
     try:
         contents = await file.read()
+        size_bytes = len(contents)  # ✅ CRITICAL FIX
 
         print("🔥 USER ID:", user_id)
         print("🔥 DEVICE:", device_name)
         print("🔥 SNAPSHOT:", snapshot_id)
+        print("🔥 SIZE BYTES:", size_bytes)
 
         if not user_id or user_id == "anonymous":
             return {"ok": False, "error": "user_id_required"}
@@ -191,10 +193,15 @@ async def upload_file(
         if not result["ok"]:
             return {"ok": False, "error": result["error"]}
 
-        # =============================
-        # 🧠 SNAPSHOT LOGIC (FIXED)
-        # =============================
+        file_entry = {
+            "filename": file.filename,
+            "url": result["url"],
+            "size": size_bytes,  # ✅ STORE SIZE
+        }
 
+        # =============================
+        # 🧠 SNAPSHOT LOGIC
+        # =============================
         existing_snapshot = None
 
         if snapshot_id:
@@ -208,10 +215,7 @@ async def upload_file(
                 {"snapshot_id": snapshot_id},
                 {
                     "$push": {
-                        "files": {
-                            "filename": file.filename,
-                            "url": result["url"]
-                        }
+                        "files": file_entry
                     },
                     "$set": {
                         "updated_at": time.time()
@@ -224,10 +228,7 @@ async def upload_file(
                 {"snapshot_id": snapshot_id},
                 {
                     "$push": {
-                        "files": {
-                            "filename": file.filename,
-                            "url": result["url"]
-                        }
+                        "files": file_entry
                     },
                     "$inc": {"file_count": 1}
                 }
@@ -242,12 +243,7 @@ async def upload_file(
                 "device_uid": device_uid,
                 "device_name": device_name,
                 "user_id": user_id,
-                "files": [
-                    {
-                        "filename": file.filename,
-                        "url": result["url"]
-                    }
-                ],
+                "files": [file_entry],  # ✅ STORE SIZE HERE TOO
                 "type": "manual_upload",
                 "ts": time.time(),
             })
@@ -258,6 +254,7 @@ async def upload_file(
             "ok": True,
             "url": result["url"],
             "snapshot_id": snapshot_id,
+            "size": size_bytes,  # optional, useful for debug
         }
 
     except Exception as e:
@@ -266,13 +263,9 @@ async def upload_file(
 
 
 
-
 @router.get("/events/{device_uid}")
 def get_events(device_uid: str, limit: int = 50):
     try:
-        # =============================
-        # 📦 FETCH EVENTS
-        # =============================
         events = list(
             events_collection.find(
                 {"device_uid": device_uid},
@@ -282,9 +275,6 @@ def get_events(device_uid: str, limit: int = 50):
             .limit(limit)
         )
 
-        # =============================
-        # 🔥 LOAD FILES FROM SNAPSHOTS
-        # =============================
         for event in events:
             snapshot_id = event.get("snapshot_id")
 
@@ -294,21 +284,23 @@ def get_events(device_uid: str, limit: int = 50):
                     {"_id": 0, "files": 1}
                 )
 
-                if snapshot and isinstance(snapshot.get("files"), list):
-                    files = snapshot["files"]
-                else:
-                    files = []
+                files = snapshot.get("files", []) if snapshot else []
 
-                event["files"] = files
-                event["file_count"] = len(files)
+                # ✅ normalize each file entry
+                normalized_files = []
+                for f in files:
+                    normalized_files.append({
+                        "filename": f.get("filename"),
+                        "url": f.get("url"),
+                        "size": f.get("size", 0),  # ✅ safe fallback
+                    })
 
+                event["files"] = normalized_files
+                event["file_count"] = len(normalized_files)
             else:
                 event["files"] = []
                 event["file_count"] = 0
 
-        # =============================
-        # 🚀 RESPONSE
-        # =============================
         return {
             "ok": True,
             "events": events
@@ -317,7 +309,6 @@ def get_events(device_uid: str, limit: int = 50):
     except Exception as e:
         print("❌ get_events error:", e)
         return {"ok": False, "error": str(e)}
-
 
 
 
@@ -337,6 +328,7 @@ def export_events(device_uid: str):
             return {"ok": False, "error": "no_events"}
 
         normalized = []
+
         for event in events:
             row = {}
             for key, value in event.items():
@@ -350,12 +342,25 @@ def export_events(device_uid: str):
                     row[key] = value.isoformat()
                 else:
                     row[key] = value
+
             normalized.append(row)
 
+        # ✅ EVERYTHING BELOW MUST BE INSIDE TRY
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=normalized[0].keys())
+
+        # collect all keys
+        all_keys = set()
+        for row in normalized:
+            all_keys.update(row.keys())
+
+        fieldnames = list(all_keys)
+
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(normalized)
+
+        for row in normalized:
+            writer.writerow(row)
+
         output.seek(0)
 
         return StreamingResponse(
@@ -369,7 +374,6 @@ def export_events(device_uid: str):
     except Exception as e:
         print("❌ export error:", e)
         return {"ok": False, "error": str(e)}
-
 
 
 @router.post("/events/export/filter")
@@ -643,6 +647,8 @@ async def ws_stream(ws: WebSocket):
 
             print("🚀 DECISION:", decision)
 
+
+
             if decision.get("sync"):
                 action = snapshot_action({
                     "device_uid": packet.device_uid,
@@ -656,8 +662,6 @@ async def ws_stream(ws: WebSocket):
                     "telemetry": {
                         "battery": packet.battery.dict() if (packet.battery and include_battery) else None,
                         "touch": packet.touch.dict() if (packet.touch and include_telemetry) else None,
-                        "network": packet.network.dict() if packet.network else None,
-                        "device": packet.device.dict() if packet.device else None,
                         "preferences": prefs,
                     },
                     "decision": decision,
@@ -717,11 +721,21 @@ async def ws_stream(ws: WebSocket):
                 else:
                     push_ok = False
 
+
+                # 🔥 GENERATE RUN NUMBER (PER DEVICE)
+                last_event = events_collection.find_one(
+                    {"device_uid": packet.device_uid},
+                    sort=[("run_number", -1)]
+                )
+
+                next_run = (last_event["run_number"] + 1) if last_event and "run_number" in last_event else 1
+
                 # DB
                 insert_event({
                     "event_id": str(uuid.uuid4()),
                     "device_uid": packet.device_uid,
-                    "device_name": device_name,
+                    "run_number": next_run,  # ✅ ADD THIS
+            "device_name": device_name,
                     "platform": platform,
 
                     "event_type": decision.get("type"),
@@ -756,7 +770,8 @@ async def ws_stream(ws: WebSocket):
                 if action and action.get("ok"):
                     insert_snapshot({
                         "snapshot_id": action.get("snapshot_id"),
-                        "device_uid": packet.device_uid,
+                        "run_number": next_run,  # ✅ ADD THIS
+                "device_uid": packet.device_uid,
                         "type": decision.get("type"),
                         "status": "stored",
                         "ts": time.time(),
@@ -804,6 +819,14 @@ async def ws_stream(ws: WebSocket):
         print("[ws] disconnected")
     except Exception as e:
         print("[ws] fatal error:", e)
+
+
+
+
+
+
+
+
 
 
 

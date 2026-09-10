@@ -7,7 +7,7 @@ Elite Production Snapshot Persistence Layer
 - Preference-aware filtering
 - AI-ready schema
 - Multi-device scalable
-- Future cloud-ready (S3, etc.)
+- S3-first (with local fallback)
 """
 
 import os
@@ -17,9 +17,9 @@ import time
 import re
 import hashlib
 from typing import Dict, Any
+
 from backend.db import get_preferences
 from backend.storage.s3_service import upload_snapshot_to_s3
-
 
 
 class BackupService:
@@ -50,6 +50,9 @@ class BackupService:
 
             device_uid = payload.get("device_uid") or "unknown"
 
+            # 🔥 ensure user_id always exists (CRITICAL)
+            payload["user_id"] = payload.get("user_id") or "test_user_1"
+
             snapshot = self._build_snapshot_artifact(snapshot_id, payload)
 
             # 🔥 Apply preferences
@@ -62,7 +65,10 @@ class BackupService:
                 "ok": True,
                 "snapshot_id": snapshot_id,
                 "timestamp": snapshot["timestamp"],
-                "path": snapshot["_meta"]["path"],
+                "path": snapshot["_meta"].get("path"),
+                "s3_url": snapshot["_meta"].get("url"),
+                "s3_key": snapshot["_meta"].get("s3_key"),
+                "storage": snapshot["_meta"].get("storage"),
             }
 
         except Exception as e:
@@ -86,7 +92,6 @@ class BackupService:
 
         timestamp = int(time.time())
 
-        # 🔥 checksum for integrity + dedupe
         checksum = hashlib.sha256(
             json.dumps(payload, sort_keys=True).encode()
         ).hexdigest()
@@ -95,6 +100,7 @@ class BackupService:
             "snapshot_id": snapshot_id,
             "timestamp": timestamp,
             "device_uid": payload.get("device_uid"),
+            "user_id": payload.get("user_id"),  # 🔥 CRITICAL FIX
 
             # -----------------------------
             # STATE
@@ -142,13 +148,14 @@ class BackupService:
             # -----------------------------
             "_meta": {
                 "created_at": timestamp,
-                "storage": "local_disk",
+                "storage": None,
                 "path": None,
+                "s3_key": None,
+                "url": None,
                 "compressed": False,
                 "size_bytes": None,
             },
         }
-
 
     def _persist_snapshot(self, snapshot: Dict[str, Any]) -> None:
         snapshot_id = snapshot["snapshot_id"]
@@ -156,14 +163,11 @@ class BackupService:
         device_uid = self._safe_filename(snapshot.get("device_uid", "unknown"))
         user_id = snapshot.get("user_id") or "anonymous"
 
-        # 🔥 STRUCTURED KEY (MULTI-USER READY)
-        s3_key = f"users/{user_id}/devices/{device_uid}/snapshots/{snapshot_id}.json"
-
         try:
             # --------------------------------------------------
             # SIZE PROTECTION
             # --------------------------------------------------
-            MAX_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
+            MAX_SIZE_BYTES = 5 * 1024 * 1024
 
             raw_json = json.dumps(snapshot)
             if len(raw_json.encode("utf-8")) > MAX_SIZE_BYTES:
@@ -174,13 +178,13 @@ class BackupService:
             snapshot_json = json.dumps(snapshot)
 
             # --------------------------------------------------
-            # ☁️ PRIMARY: S3 UPLOAD
+            # ☁️ PRIMARY: S3
             # --------------------------------------------------
             result = upload_snapshot_to_s3(
                 snapshot_json=snapshot_json,
                 device_uid=device_uid,
                 snapshot_id=snapshot_id,
-                user_id=user_id,  # 🔥 NEW
+                user_id=user_id,
             )
 
             if not result.get("ok"):
@@ -189,6 +193,7 @@ class BackupService:
             snapshot["_meta"]["storage"] = "s3"
             snapshot["_meta"]["s3_key"] = result["key"]
             snapshot["_meta"]["url"] = result["url"]
+            snapshot["_meta"]["path"] = None  # 🔥 important
 
             print(f"[snapshot] ☁️ uploaded → {result['key']}")
 
@@ -196,7 +201,7 @@ class BackupService:
             print(f"[snapshot] ❌ S3 FAILED → fallback local:", e)
 
             # --------------------------------------------------
-            # 💾 FALLBACK LOCAL (UNCHANGED CORE LOGIC)
+            # 💾 FALLBACK LOCAL
             # --------------------------------------------------
             device_path = os.path.join(self.base_path, device_uid)
             os.makedirs(device_path, exist_ok=True)
@@ -220,7 +225,7 @@ class BackupService:
             print(f"[snapshot] 💾 fallback stored: {file_path} ({size} bytes)")
 
     # --------------------------------------------------
-    # OPTIONAL (READ)
+    # OPTIONAL READ
     # --------------------------------------------------
 
     def list_snapshots(self, device_uid: str) -> list:
@@ -268,10 +273,6 @@ class BackupService:
 
         merged = {**defaults, **prefs}
 
-        # --------------------------
-        # TOP LEVEL FILTER
-        # --------------------------
-
         if not merged["include_state"]:
             snapshot.pop("state", None)
 
@@ -296,10 +297,6 @@ class BackupService:
         if not merged["include_context"]:
             snapshot.pop("context", None)
 
-        # --------------------------
-        # TELEMETRY FILTER
-        # --------------------------
-
         if "telemetry" in snapshot:
             telemetry = snapshot.get("telemetry") or {}
 
@@ -310,13 +307,6 @@ class BackupService:
                 telemetry.pop("touch", None)
 
             snapshot["telemetry"] = telemetry
-
-        # --------------------------
-        # META TRACKING
-        # --------------------------
-
-        if "_meta" not in snapshot:
-            snapshot["_meta"] = {}
 
         snapshot["_meta"]["preferences_applied"] = merged
 

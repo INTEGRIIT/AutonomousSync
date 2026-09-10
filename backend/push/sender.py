@@ -4,7 +4,7 @@ import httpx
 import jwt
 
 from backend.db import get_device
-from backend.push.fcm_sender import send_fcm_push  # 🔥 NEW
+from backend.push.fcm_sender import send_fcm_push  # 🔥 ANDROID SUPPORT
 
 # =========================================================
 # ENV CONFIG
@@ -169,7 +169,7 @@ def send_push(
             return False
 
     # =========================================================
-    # 🤖 ANDROID → FCM (🔥 FULLY WIRED)
+    # 🤖 ANDROID → FCM
     # =========================================================
     elif platform == "android":
 
