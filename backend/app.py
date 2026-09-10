@@ -31,7 +31,7 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 # =========================================================
 # IMPORT ROUTERS
 # =========================================================
-from backend.api.routesold import router as api_router
+from backend.api.routes import router as api_router
 from backend.api.fileRoutes import router as file_router  # 🔥 NEW
 
 # =========================================================

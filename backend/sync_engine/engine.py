@@ -38,17 +38,17 @@ class SyncEngine:
 
             print("🚨 EMERGENCY DETECTED:", emergency)
 
-            # 🔥 TEMP: DISABLE COOLDOWN FOR TESTING
-            # Comment this back later for production
-            """
+            # Emergency cooldown. Without it a single physical event
+            # emits a burst of full sync + snapshot + push cycles:
+            # 733 impact detections collapse to 469 with a 500 ms
+            # detector refractory, and the remaining duplicates are
+            # suppressed here.
             if t - self.last_emergency_ms < self.policy.emergency_cooldown_ms:
-                print("⛔ BLOCKED: emergency cooldown")
                 return {
                     "sync": False,
                     "reason": "emergency_cooldown",
                     "type": "EMERGENCY",
                 }
-            """
 
             print("🔥 EMERGENCY SYNC TRIGGERED")
 
