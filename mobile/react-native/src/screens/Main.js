@@ -1,6 +1,6 @@
 import "react-native-get-random-values";
 import React, { useEffect, useRef, useState } from "react";
-import { ScrollView } from "react-native";
+import { ScrollView, Text, TouchableOpacity } from "react-native";
 import {
   SafeAreaView,
   SafeAreaProvider,
@@ -21,6 +21,8 @@ import TelemetryPanel from "../components/TelemetryPanel";
 import EmergencyPanel from "../components/EmergencyPanel";
 import BatteryPanel from "../components/BatteryPanel";
 import { startContext } from "../services/contextService";
+import ResearchUnlock from "../components/ResearchUnlock";
+import { BASE_URL } from "../../config";
 import ConnectivityPanel from "../components/ConnectivityPanel";
 
 import { registerForPush } from "../services/pushService";
@@ -82,6 +84,15 @@ function MainScreen({ navigation }) {
   const batteryRef = useRef(null);
   const networkRef = useRef(null);
   const deviceCtxRef = useRef(null);
+  const trialRef = useRef(null);        // set by TrialModeScreen
+  const packetCountRef = useRef(0);
+
+  // Research-device flag. TestFlight testers and research operators run
+  // the same build; only flagged devices see Trial Mode and only their
+  // telemetry is tagged as research data.
+  const [researchMode, setResearchMode] = useState(false);
+  const [researchMember, setResearchMember] = useState(null);
+  const researchRef = useRef(false);
   const [preferences, setPreferences] = useState(null);
 
   const f = (x) => (typeof x === "number" ? x.toFixed(2) : "—");
@@ -236,6 +247,29 @@ function MainScreen({ navigation }) {
     };
   }, []);
 
+  /* ================= RESEARCH FLAG ================= */
+
+  useEffect(() => {
+    if (!deviceUid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `${BASE_URL}/admin/research-device?device_uid=${encodeURIComponent(deviceUid)}`
+        );
+        const j = await res.json();
+        if (!cancelled && j?.ok) {
+          setResearchMode(!!j.is_research_device);
+          setResearchMember(j.member || null);
+          researchRef.current = !!j.is_research_device;
+        }
+      } catch {
+        // offline: stay in normal mode
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [deviceUid]);
+
   /* ================= CONTEXT (battery / network / device) ================= */
 
   useEffect(() => {
@@ -271,11 +305,15 @@ function MainScreen({ navigation }) {
         battery: batteryRef.current,
         network: networkRef.current,
         device: deviceCtxRef.current,
+        trial_id: trialRef.current?.trial_id ?? null,
+        trial_meta: trialRef.current ?? null,
+        research: researchRef.current || null,
         preferences: preferences || {},
         schema_version: "v3",
       };
 
       wsRef.current.send(JSON.stringify(packet));
+      packetCountRef.current += 1;
     }, SEND_INTERVAL_MS);
   };
 
@@ -428,6 +466,36 @@ function MainScreen({ navigation }) {
         }}
         />
 
+        {researchMode && (
+        <TouchableOpacity
+          style={{
+            backgroundColor: "#1b2942",
+            borderRadius: 10,
+            paddingVertical: 14,
+            alignItems: "center",
+            marginHorizontal: 16,
+            marginTop: 10,
+            borderWidth: 1,
+            borderColor: "#2563eb",
+          }}
+          onPress={() =>
+            navigation.navigate("TrialMode", {
+              deviceUid,
+              deviceName,
+              platform: deviceCtxRef.current?.platform,
+              deviceModel: deviceCtxRef.current?.model,
+              trialRef,
+              packetCountRef,
+              member: researchMember,
+            })
+          }
+        >
+          <Text style={{ color: "#6af", fontSize: 15, fontWeight: "700" }}>
+            🧪 Trial Mode{researchMember ? ` · ${researchMember}` : ""}
+          </Text>
+        </TouchableOpacity>
+        )}
+
         <ControlPanel
           configured={!!deviceName}
           connected={connected}
@@ -460,6 +528,16 @@ function MainScreen({ navigation }) {
           setDeviceName={setDeviceName}
           navigation={navigation}
         />
+        <ResearchUnlock
+          deviceUid={deviceUid}
+          researchMode={researchMode}
+          onChange={(on, mem) => {
+            setResearchMode(on);
+            setResearchMember(mem);
+            researchRef.current = on;
+          }}
+        />
+
       </ScrollView>
     </SafeAreaView>
   );

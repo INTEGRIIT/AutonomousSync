@@ -6,6 +6,7 @@ import { createStackNavigator } from "@react-navigation/stack";
 import MainScreen from "../screens/Main";
 import FileManagerScreen from "../screens/FileManagerScreen";
 import EventsScreen from "../screens/EventsScreen";
+import TrialModeScreen from "../screens/TrialModeScreen";
 
 const Stack = createStackNavigator();
 
@@ -35,6 +36,15 @@ export default function AppNavigator() {
           component={FileManagerScreen}
           options={{
             title: "Your Files",
+          }}
+        />
+
+{/* 🧪 TRIAL MODE (labelled collection runs) */}
+        <Stack.Screen
+          name="TrialMode"
+          component={TrialModeScreen}
+          options={{
+            title: "Trial Mode",
           }}
         />
 

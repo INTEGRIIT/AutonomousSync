@@ -130,6 +130,13 @@ class SensorPacket(BaseModel):
     meta: Optional[Dict[str, Any]] = None
 
     # -----------------------------------------------------
+    # LABELLED TRIAL CONTEXT (collection runs)
+    # -----------------------------------------------------
+
+    trial_id: Optional[str] = None
+    trial_meta: Optional[Dict[str, Any]] = None
+
+    # -----------------------------------------------------
     # VERSIONING (VERY IMPORTANT)
     # -----------------------------------------------------
 

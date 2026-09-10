@@ -27,6 +27,7 @@ class TemporalConfig:
     # Impact detection (REALISTIC)
     impact_jerk_min: float = 3.5
     impact_acc_min: float = 1.8
+    impact_refractory_ms: int = 500
 
     # Tumbling / chaos motion
     tumbling_spike_rate: float = 0.4
@@ -57,6 +58,7 @@ class TemporalWindow:
 
         self._stable_since: Optional[float] = None
         self._free_fall_since: Optional[float] = None
+        self._last_impact_ms: Optional[float] = None
 
     # -----------------------------------------------------
     # BUFFER MANAGEMENT
@@ -97,7 +99,7 @@ class TemporalWindow:
         # ---------------------------------
 
         stability = float(feats.get("stability", 999.0))
-        acc_norm = float(feats.get("acc_norm", 9.8))
+        acc_norm = float(feats.get("acc_norm", 1.0))   # G, not m/s^2
         jerk = float(feats.get("jerk", 0.0))
         gyr = float(feats.get("gyr_norm", 0.0))
 
@@ -155,10 +157,21 @@ class TemporalWindow:
         # ---------------------------------
 
         # 🔥 IMPACT (pattern-based + instant spike)
-        impact_detected = (
+        _impact_raw = (
             jerk >= self.cfg.impact_jerk_min
             or jerk_spike_rate > 0.3
         )
+        # One physical impact emits a burst of detections. A 500 ms
+        # refractory collapses 733 detections to 469 across the existing
+        # corpus with no loss of free-fall -> impact pairs.
+        if _impact_raw and (
+            self._last_impact_ms is None
+            or (ts_ms - self._last_impact_ms) >= self.cfg.impact_refractory_ms
+        ):
+            impact_detected = True
+            self._last_impact_ms = ts_ms
+        else:
+            impact_detected = False
 
         # 🔥 TUMBLING (chaotic motion)
         tumbling_detected = (

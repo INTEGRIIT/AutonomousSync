@@ -93,3 +93,6 @@ research/~$*
 *.bak
 
 *.swp
+
+*.bak
+*.bak[0-9]
