@@ -227,3 +227,44 @@ export async function uploadSelectedFiles(deviceUid, deviceName, snapshotId) {
     console.error("❌ uploadSelectedFiles error:", err);
   }
 }
+
+// ---------------------------------------------------------------
+// Queue-facing wrapper.
+//
+// uploadSelectedFiles() returns undefined on success, on "no files",
+// and on error alike, and swallows exceptions. The upload queue needs
+// to know whether an attempt actually worked, so this variant reports
+// per-file outcomes without changing the existing call sites.
+// ---------------------------------------------------------------
+
+export async function uploadSelectedFilesTracked(deviceUid, deviceName,
+                                                 snapshotId) {
+  if (!deviceUid || !deviceName) return { ok: false, reason: "missing_ids" };
+
+  const files = await getSelectedFiles();
+  if (!files.length) return { ok: true, uploaded: 0, reason: "no_files" };
+
+  if (!snapshotId) snapshotId = uuidv4();
+
+  let uploaded = 0;
+  let failed = 0;
+
+  for (const file of files) {
+    if (file.last_synced) continue;
+    if (file.source !== "local") continue;
+    try {
+      const result = await uploadFile(file, deviceUid, deviceName, snapshotId);
+      if (result?.ok) {
+        await markFileAsSynced(file.name);
+        uploaded += 1;
+      } else {
+        failed += 1;
+      }
+    } catch (err) {
+      console.log("upload error:", file.name, err?.message || err);
+      failed += 1;
+    }
+  }
+
+  return { ok: failed === 0, uploaded, failed, snapshot_id: snapshotId };
+}

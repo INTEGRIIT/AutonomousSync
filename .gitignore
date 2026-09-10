@@ -77,14 +77,11 @@ mobile/react-native/package-lock.json
 # iOS
 mobile/react-native/ios/Pods/
 mobile/react-native/ios/Podfile.lock
-google-services.json
-android/app/google-services.json
-mobile/react-native/android/
+android/app/mobile/react-native/android/
 
 mobile/react-native/android/
 mobile/react-native/ios/
-mobile/react-native/google-services.json
-backend/firebase/*.json
+mobile/react-native/backend/firebase/*.json
 *.p8
 .env
 

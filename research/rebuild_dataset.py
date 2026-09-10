@@ -130,6 +130,19 @@ def segment_episodes(ev, gap_ms=2000):
     return ev
 
 
+def ceiling_for(height_ft):
+    """
+    Physical free-fall time for a given release height, in ms.
+
+    Falls back to the 5 ft protocol maximum when the height is
+    unknown. With custom heights now recordable per trial, a fixed
+    ceiling would discard valid pairs from higher drops.
+    """
+    if not height_ft or height_ft <= 0:
+        return MAX_FALL_MS
+    return (2 * (float(height_ft) * 0.3048) / G) ** 0.5 * 1000
+
+
 def lead_times(ev, max_ms=MAX_FALL_MS):
     """
     Within-episode free_fall -> impact pairing.
@@ -149,6 +162,7 @@ def lead_times(ev, max_ms=MAX_FALL_MS):
                     "episode_id": eid,
                     "device_uid": r["device_uid"],
                     "device_name": r["device_name"],
+                    "height_ft": r.get("height_ft"),
                     "ff_ts": pending_ff["ts"],
                     "impact_ts": r["ts"],
                     "lead_time_ms": r["ts"] - pending_ff["ts"],
@@ -157,7 +171,13 @@ def lead_times(ev, max_ms=MAX_FALL_MS):
     allp = pd.DataFrame(rows)
     if allp.empty:
         return allp, allp
-    phys = allp[allp["lead_time_ms"] <= max_ms].copy()
+    # Per-trial ceiling where the trial recorded a height; the protocol
+    # maximum otherwise.
+    if "height_ft" in allp.columns:
+        allp["ceiling_ms"] = allp["height_ft"].apply(ceiling_for)
+    else:
+        allp["ceiling_ms"] = MAX_FALL_MS
+    phys = allp[allp["lead_time_ms"] <= allp["ceiling_ms"]].copy()
     phys["implied_height_ft"] = (
         0.5 * G * (phys["lead_time_ms"] / 1000.0) ** 2) / 0.3048
     return allp, phys

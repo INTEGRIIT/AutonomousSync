@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from shared.schemas.sensor_packet import SensorPacket
-from backend.api.runtime import runtime
+from backend.api.runtime import runtime, get_runtime
 from backend.storage.jsonl_store import JSONLStore
 from backend.utils.jsonx import loads, dumps
 from backend.sensors.sanity import vec3_to_np
@@ -545,29 +545,33 @@ async def ws_stream(ws: WebSocket):
                 await ws.send_text(dumps({"error": "accel_and_gyro_required"}))
                 continue
 
+            # Per-device detector state. Sharing one instance across
+            # devices interleaves their samples.
+            rt = get_runtime(packet.device_uid)
+
             # =============================
             # PIPELINE
             # =============================
 
-            feats = runtime.fusion.step(packet.ts, acc, gyr)
+            feats = rt.fusion.step(packet.ts, acc, gyr)
 
-            temporal = runtime.temporal.update(
+            temporal = rt.temporal.update(
                 packet.ts,
                 feats,
                 bool(packet.touch.active) if packet.touch else False,
                 packet.moisture.value if packet.moisture else None,
             )
 
-            water = runtime.water.infer(temporal)
+            water = rt.water.infer(temporal)
 
-            state = runtime.sm.classify(
+            state = rt.sm.classify(
                 feats,
                 temporal,
                 water,
                 bool(packet.touch.active) if packet.touch else False,
             ).value
 
-            transition = runtime.state_transition.update(state)
+            transition = rt.state_transition.update(state)
 
             # =============================
             # 🔥 USER PREFERENCES (FINAL)
@@ -619,7 +623,7 @@ async def ws_stream(ws: WebSocket):
                 if emergency_intent and emergency_intent["reason"] == "free_fall":
                     emergency_intent = None
 
-            decision = runtime.sync.decide(
+            decision = rt.sync.decide(
                 state=state,
                 stable_duration_ms=int(temporal.get("stable_duration_ms", 0)),
                 emergency=emergency_intent,

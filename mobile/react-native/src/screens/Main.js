@@ -22,6 +22,8 @@ import EmergencyPanel from "../components/EmergencyPanel";
 import BatteryPanel from "../components/BatteryPanel";
 import { startContext } from "../services/contextService";
 import ResearchUnlock from "../components/ResearchUnlock";
+import { startAutoFlush } from "../services/uploadQueue";
+import { uploadSelectedFilesTracked } from "../services/fileService";
 import { BASE_URL } from "../../config";
 import ConnectivityPanel from "../components/ConnectivityPanel";
 
@@ -246,6 +248,21 @@ function MainScreen({ navigation }) {
       m.remove();
     };
   }, []);
+
+  /* ================= UPLOAD QUEUE ================= */
+
+  // Drain anything left queued by a previous session. An upload that
+  // failed during a hazard is retried here rather than lost.
+  useEffect(() => {
+    if (!deviceUid || !deviceName) return;
+    return startAutoFlush(async (entry) => {
+      const r = await uploadSelectedFilesTracked(
+        entry.device_uid || deviceUid,
+        entry.device_name || deviceName,
+        entry.snapshot_id);
+      return !!r?.ok;
+    }, 30000);
+  }, [deviceUid, deviceName]);
 
   /* ================= RESEARCH FLAG ================= */
 

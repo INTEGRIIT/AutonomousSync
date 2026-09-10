@@ -10,8 +10,12 @@ class SyncEngine:
         self.last_sync_ms = 0
         self.last_emergency_ms = 0
 
-        # Prevent repeated graceful triggers
+        # Prevent repeated graceful triggers within one stable episode.
+        # The timestamp bounds the episode: without it the flag persists
+        # for as long as the device stays settled, so a stationary
+        # device synchronizes once and never again.
         self._graceful_fired = False
+        self._graceful_fired_ms = 0
 
     def decide(
         self,
@@ -94,12 +98,17 @@ class SyncEngine:
             }
 
         if self._graceful_fired:
-            print("⛔ BLOCKED: already fired")
-            return {
-                "sync": False,
-                "reason": "already_synced_this_stable_episode",
-                "type": "GRACEFUL",
-            }
+            if t - self._graceful_fired_ms >= self.policy.episode_max_ms:
+                # Episode has run long enough that another sync is due.
+                # A device settled for hours is still accumulating
+                # unsynchronized changes.
+                self._graceful_fired = False
+            else:
+                return {
+                    "sync": False,
+                    "reason": "already_synced_this_stable_episode",
+                    "type": "GRACEFUL",
+                }
 
         # =================================================
         # ✅ FIRE GRACEFUL
@@ -108,6 +117,7 @@ class SyncEngine:
 
         self.last_sync_ms = t
         self._graceful_fired = True
+        self._graceful_fired_ms = t
 
         return {
             "sync": True,

@@ -1,4 +1,5 @@
-import { uploadAllStoredFiles } from "../utils/fileManager"; // 🔥 ADD THIS
+import { uploadSelectedFilesTracked } from "./fileService";
+import { enqueue, flush } from "./uploadQueue";
 
 export function createWebSocket(url, handlers = {}) {
   console.log("🌐 Creating WebSocket:", url);
@@ -21,14 +22,22 @@ export function createWebSocket(url, handlers = {}) {
         console.log("🚀 EVENT TRIGGERED UPLOAD");
         console.log("📦 SNAPSHOT:", data.snapshot.id);
 
+        // Queue before attempting. A phone that was just dropped may
+        // lose connectivity or be killed mid-transfer; the queued entry
+        // survives both and is retried with backoff.
         try {
-          await uploadAllStoredFiles(
-            data.device_uid,
-            data.device_name,
-            data.snapshot.id
-          );
+          await enqueue({
+            snapshot_id: data.snapshot.id,
+            device_uid: data.device_uid,
+            device_name: data.device_name,
+          });
+          await flush(async (entry) => {
+            const r = await uploadSelectedFilesTracked(
+              entry.device_uid, entry.device_name, entry.snapshot_id);
+            return !!r?.ok;
+          });
         } catch (err) {
-          console.log("❌ AUTO UPLOAD FAILED:", err);
+          console.log("upload dispatch failed:", err?.message || err);
         }
       }
 

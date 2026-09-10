@@ -11,7 +11,8 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "plugins": [
@@ -33,6 +34,7 @@
         "projectId": "aac8be3e-7308-4314-90ad-7687eda7ef7f"
       }
     },
-    "owner": "darrylcarp75"
+    "owner": "darrylcarp75",
+    "newArchEnabled": false
   }
 }
