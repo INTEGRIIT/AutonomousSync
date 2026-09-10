@@ -656,6 +656,8 @@ async def ws_stream(ws: WebSocket):
                     "telemetry": {
                         "battery": packet.battery.dict() if (packet.battery and include_battery) else None,
                         "touch": packet.touch.dict() if (packet.touch and include_telemetry) else None,
+                        "network": packet.network.dict() if packet.network else None,
+                        "device": packet.device.dict() if packet.device else None,
                         "preferences": prefs,
                     },
                     "decision": decision,

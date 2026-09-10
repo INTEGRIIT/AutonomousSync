@@ -20,6 +20,7 @@ import StatePanel from "../components/StatePanel";
 import TelemetryPanel from "../components/TelemetryPanel";
 import EmergencyPanel from "../components/EmergencyPanel";
 import BatteryPanel from "../components/BatteryPanel";
+import { startContext } from "../services/contextService";
 import ConnectivityPanel from "../components/ConnectivityPanel";
 
 import { registerForPush } from "../services/pushService";
@@ -77,6 +78,10 @@ function MainScreen({ navigation }) {
   const [batteryLevel, setBatteryLevel] = useState(null);
   const [batteryState, setBatteryState] = useState(null);
   const [drainRate, setDrainRate] = useState(null);
+
+  const batteryRef = useRef(null);
+  const networkRef = useRef(null);
+  const deviceCtxRef = useRef(null);
   const [preferences, setPreferences] = useState(null);
 
   const f = (x) => (typeof x === "number" ? x.toFixed(2) : "—");
@@ -231,33 +236,19 @@ function MainScreen({ navigation }) {
     };
   }, []);
 
-  /* ================= BATTERY ================= */
+  /* ================= CONTEXT (battery / network / device) ================= */
 
   useEffect(() => {
-    let lastLevel = null;
-    let lastTs = null;
-
-    const update = async () => {
-      const level = await Battery.getBatteryLevelAsync();
-      const state = await Battery.getBatteryStateAsync();
-      const now = Date.now();
-
-      if (lastLevel !== null) {
-        const delta = (lastLevel - level) * 100;
-        const minutes = (now - lastTs) / 60000;
-        if (minutes > 0) setDrainRate((delta / minutes).toFixed(2));
+    const stop = startContext(batteryRef, networkRef, deviceCtxRef);
+    const ui = setInterval(() => {
+      const b = batteryRef.current;
+      if (b) {
+        setBatteryLevel(b.level);
+        setBatteryState(b.state);
+        setDrainRate(b.drain_rate == null ? null : b.drain_rate.toFixed(2));
       }
-
-      lastLevel = level;
-      lastTs = now;
-
-      setBatteryLevel(level);
-      setBatteryState(state);
-    };
-
-    update();
-    const i = setInterval(update, 15000);
-    return () => clearInterval(i);
+    }, 2000);
+    return () => { stop(); clearInterval(ui); };
   }, []);
 
   /* ================= SEND LOOP ================= */
@@ -275,9 +266,11 @@ function MainScreen({ navigation }) {
         device_uid: deviceUid,
         accel: accRef.current,
         gyro: gyrRef.current,
-        magnetometer: magRef.current,
+        mag: magRef.current,
         touch: { active: touchActive },
-        battery: batteryLevel ? { level: batteryLevel } : null,
+        battery: batteryRef.current,
+        network: networkRef.current,
+        device: deviceCtxRef.current,
         preferences: preferences || {},
         schema_version: "v3",
       };
@@ -303,18 +296,20 @@ function MainScreen({ navigation }) {
     try {
       console.log("🚀 STEP 1: REGISTER DEVICE FIRST");
 
-      // 🔥 HARD REQUIREMENT — DEVICE MUST EXIST IN DB
+      // Push registration is best-effort. The downlink path is
+      // WS_active OR Push_active, so a device that cannot register
+      // for push must still stream telemetry and remain reachable
+      // over the socket. Emulators (Device.isDevice === false) and
+      // devices with notifications denied fall into this case.
       const token = await registerForPush(deviceUid, deviceName);
 
       if (!token) {
-        console.log("❌ Push registration failed — blocking connection");
+        console.log("⚠️ Push unavailable — continuing with WebSocket only");
         setRegistered(false);
-        connectingRef.current = false;
-        return;
+      } else {
+        console.log("✅ Push registered successfully");
+        setRegistered(true);
       }
-
-      console.log("✅ Push registered successfully");
-      setRegistered(true);
 
       console.log("🌐 STEP 2: CONNECTING WEBSOCKET");
 

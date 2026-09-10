@@ -91,3 +91,5 @@ backend/firebase/*.json
 *.zip
 research/~$*
 *.bak
+
+*.swp
