@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "90287035325",
+    "project_id": "autonomoussync",
+    "storage_bucket": "autonomoussync.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:90287035325:android:44bdacbf6e0bb73e67f8d4",
+        "android_client_info": {
+          "package_name": "com.anonymous.autonomoussync"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJYxqJ4kdd1encFSDGbp9BC7DaSzfkMV8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
