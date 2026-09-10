@@ -21,7 +21,8 @@ class FeatureExtractor:
         self.prev_ts = ts_ms
 
         # “stability score” (lower is more stable)
-        stability = float(abs(acc_norm - 9.81) + gyr_norm)
+        # acc_norm is in G (Expo sensors), not m/s^2
+        stability = float(abs(acc_norm - 1.0) + gyr_norm)
 
         return {
             "acc_norm": float(acc_norm),

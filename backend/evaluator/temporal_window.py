@@ -14,7 +14,7 @@ class TemporalConfig:
     window_ms: int = 2500
 
     # Stability
-    stable_epsilon: float = 9.5
+    stable_epsilon: float = 0.69   # was 9.5 under the 9.81 offset bug
 
     # Motion spike thresholds (REALISTIC)
     spike_jerk: float = 3.0
@@ -176,14 +176,7 @@ class TemporalWindow:
         # DEBUG (CRITICAL FOR YOU RIGHT NOW)
         # ---------------------------------
 
-        print("🧠 TEMPORAL DEBUG:", {
-            "acc_norm": round(acc_norm, 3),
-            "jerk": round(jerk, 3),
-            "gyr": round(gyr, 3),
-            "impact": impact_detected,
-            "free_fall": free_fall_detected,
-            "tumbling": tumbling_detected,
-        })
+        # per-packet debug print removed (stdout in hot path)
 
         # ---------------------------------
         # OUTPUT

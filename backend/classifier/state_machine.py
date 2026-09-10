@@ -76,7 +76,7 @@ class StateMachine:
         # ⚠️ PRIORITY 4: UNSTABLE MOTION
         # -----------------------------------
 
-        if stability > 12.0 or jerk > 14.0:
+        if stability > 3.19 or jerk > 14.0:
             self.last_state = SystemState.UNSTABLE
             return SystemState.UNSTABLE
 
