@@ -34,9 +34,13 @@ export default function TrialModeScreen({ route, navigation }) {
   // trialRef is the same ref the send loop reads, so the trial id and
   // metadata ride inside every telemetry packet.
   const { deviceUid, deviceName, platform, deviceModel, trialRef,
-          packetCountRef } = route.params || {};
+          packetCountRef, member: assignedMember } = route.params || {};
 
-  const [member, setMember] = useState("M1");
+  // The member is a property of the device, assigned when it was
+  // flagged as a research device, not a per-trial choice. Letting the
+  // operator pick one would put a label on the trial id and on the
+  // spoken video record that disagrees with what the server stores.
+  const [member, setMember] = useState(assignedMember || "M1");
   const [caseType, setCaseType] = useState("none");
   const [seq, setSeq] = useState(1);
 
@@ -250,12 +254,22 @@ export default function TrialModeScreen({ route, navigation }) {
       <View style={s.card}>
         <Text style={s.cardTitle}>Session</Text>
         <Text style={s.lbl}>Member</Text>
-        <View style={s.row}>
-          {["M1", "M2", "M3", "TEST"].map((m) => (
-            <Chip key={m} label={m} active={member === m}
-                  onPress={() => setMember(m)} />
-          ))}
-        </View>
+        {assignedMember ? (
+          <View style={s.assigned}>
+            <Text style={s.assignedTxt}>{assignedMember}</Text>
+            <Text style={s.assignedNote}>
+              assigned to this device
+            </Text>
+          </View>
+        ) : (
+          <View style={s.unassigned}>
+            <Text style={s.unassignedTxt}>
+              No member assigned. This device is not flagged for a
+              member, so trials will not be attributed correctly.
+              Tell Darryl before continuing.
+            </Text>
+          </View>
+        )}
         <Text style={s.lbl}>Case / protection</Text>
         <TextInput style={s.input} value={caseType} onChangeText={setCaseType}
                    placeholder="none / rugged / folio"
@@ -379,6 +393,12 @@ const s = StyleSheet.create({
   cardTitle: { color: "#9fb", fontSize: 12, fontWeight: "700",
                letterSpacing: 1, marginBottom: 10 },
   lbl: { color: "#8aa", fontSize: 12, marginTop: 10, marginBottom: 6 },
+  assigned: { backgroundColor: "#14321f", borderRadius: 8, padding: 12,
+              flexDirection: "row", alignItems: "baseline" },
+  assignedTxt: { color: "#4ade80", fontSize: 20, fontWeight: "700" },
+  assignedNote: { color: "#6b8", fontSize: 11, marginLeft: 10 },
+  unassigned: { backgroundColor: "#3a1010", borderRadius: 8, padding: 12 },
+  unassignedTxt: { color: "#fca5a5", fontSize: 12, lineHeight: 17 },
   lblSmall: { color: "#667", fontSize: 11, marginTop: 4, marginBottom: 6 },
   gridOk: { backgroundColor: "#14321f", borderRadius: 8, padding: 8,
             marginTop: 12 },
