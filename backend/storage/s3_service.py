@@ -50,6 +50,12 @@ def build_s3_key(
     base = f"users/{user_id}/devices/{device_uid}"
 
     if kind == "file":
+        # Group uploaded files under the snapshot that triggered them.
+        # Without this an object in the bucket cannot be attributed to
+        # the hazard that caused it, so per-event upload completeness
+        # and latency are not recoverable after the fact.
+        if snapshot_id:
+            return f"{base}/files/{snapshot_id}/{filename}"
         return f"{base}/files/{filename}"
 
     if kind == "snapshot":
@@ -71,6 +77,7 @@ def upload_file_to_s3(
     device_uid,
     user_id=None,
     device_name=None,
+    snapshot_id=None,            # groups files by triggering hazard
     sync_type="manual",          # 🔥 manual | emergency | auto
     sync_reason=None             # 🔥 free_fall, impact, etc.
 ):
@@ -84,6 +91,7 @@ def upload_file_to_s3(
             device_uid=device_uid,
             filename=unique_name,
             user_id=user_id,
+            snapshot_id=snapshot_id,
         )
 
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
@@ -105,6 +113,7 @@ def upload_file_to_s3(
 
             # 🔄 SYSTEM SYNC CONTEXT
             "sync_type": sync_type,        # manual | emergency
+            "snapshot_id": str(snapshot_id or ""),
         }
 
         if sync_reason:

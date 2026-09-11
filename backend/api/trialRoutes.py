@@ -25,9 +25,37 @@ router = APIRouter()
 async def trials_start(payload: dict):
     if not payload.get("trial_id") or not payload.get("device_uid"):
         return {"ok": False, "error": "trial_id and device_uid required"}
+
+    # The member label arrives from the client and nothing stops an
+    # operator selecting the wrong one. device_uid cannot be spoofed
+    # from the UI, so where the device record carries an assigned
+    # member we use that and record the discrepancy. Otherwise a
+    # mis-tap at the start of a session silently files one operator's
+    # trials under another's name, and the error is only visible at
+    # analysis time.
+    try:
+        from backend.api.adminRoutes import devices as _devices
+        rec = _devices.find_one({"device_uid": payload["device_uid"]},
+                                {"_id": 0, "research_member": 1})
+        assigned = (rec or {}).get("research_member")
+        claimed = payload.get("member")
+        if assigned:
+            if claimed and claimed != assigned:
+                payload["member_claimed"] = claimed
+                payload["member_mismatch"] = True
+            payload["member"] = assigned
+    except Exception as e:
+        # A lookup failure must not block a trial mid-collection.
+        print("member resolution failed:", e)
+
     try:
         doc = start_trial(payload)
-        return {"ok": True, "trial_id": doc["trial_id"]}
+        return {
+            "ok": True,
+            "trial_id": doc["trial_id"],
+            "member": doc.get("member"),
+            "member_mismatch": bool(payload.get("member_mismatch")),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

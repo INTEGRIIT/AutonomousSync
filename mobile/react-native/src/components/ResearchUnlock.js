@@ -103,7 +103,7 @@ export function ResearchUnlock({ deviceUid, researchMode, onChange,
 
             <Text style={s.lbl}>Member</Text>
             <View style={s.row}>
-              {["M1", "M2", "M3"].map((m) => (
+              {["M1", "M2", "M3", "TEST"].map((m) => (
                 <TouchableOpacity
                   key={m}
                   style={[s.chip, member === m && s.chipOn]}

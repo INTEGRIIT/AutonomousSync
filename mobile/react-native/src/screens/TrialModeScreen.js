@@ -251,7 +251,7 @@ export default function TrialModeScreen({ route, navigation }) {
         <Text style={s.cardTitle}>Session</Text>
         <Text style={s.lbl}>Member</Text>
         <View style={s.row}>
-          {["M1", "M2", "M3"].map((m) => (
+          {["M1", "M2", "M3", "TEST"].map((m) => (
             <Chip key={m} label={m} active={member === m}
                   onPress={() => setMember(m)} />
           ))}

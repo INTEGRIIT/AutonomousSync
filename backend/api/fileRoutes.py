@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, Query
 import os
 import boto3
@@ -39,11 +40,16 @@ def get_user_from_device(device_uid: str):
 @router.post("/upload")
 async def upload_file(
     device_uid: str = Form(...),
-    device_name: str = Form(None),
-    user_id: str = Form(None),
+    device_name: Optional[str] = Form(None),
+    user_id: Optional[str] = Form(None),
+    snapshot_id: Optional[str] = Form(None),
+    sync_type: str = Form("manual"),
+    sync_reason: Optional[str] = Form(None),
     file: UploadFile = File(...)
 ):
     try:
+        import time as _t
+        _t0 = _t.time()
         contents = await file.read()
 
         # 🔥 ALWAYS resolve real user
@@ -55,10 +61,17 @@ async def upload_file(
             device_uid=device_uid,
             user_id=user,
             device_name=device_name,
-            sync_type="manual",
+            snapshot_id=snapshot_id,
+            sync_type=sync_type,
+            sync_reason=sync_reason,
         )
 
-        print(f"📂 FILE UPLOADED → {result['key']}")
+        # Server-observed receive-and-store duration. Without this an
+        # upload cannot be attributed to the hazard that triggered it,
+        # and transfer latency is not recoverable after the fact.
+        result["server_ms"] = int((_t.time() - _t0) * 1000)
+        result["snapshot_id"] = snapshot_id
+        result["bytes"] = len(contents)
 
         return result
 
