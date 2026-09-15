@@ -494,7 +494,6 @@ function MainScreen({ navigation }) {
         />
 
         {researchMode && (
-        {researchMode && (
         <TouchableOpacity
           style={{
             backgroundColor: "#12263a",
@@ -526,6 +525,7 @@ function MainScreen({ navigation }) {
         </TouchableOpacity>
         )}
 
+        {researchMode && (
         <TouchableOpacity
           style={{
             backgroundColor: "#1b2942",
