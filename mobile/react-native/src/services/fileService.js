@@ -100,13 +100,65 @@ export async function saveFile(file) {
 
 // ================= SYNC TRACKING =================
 
+/**
+ * Whether a file differs from what was last uploaded.
+ *
+ * Returns true if it has never synced, if its size or modification
+ * time has moved since, or if the file cannot be inspected. The last
+ * case errs toward uploading: a redundant transfer costs bandwidth,
+ * a missed one costs the data the system exists to protect.
+ */
+export async function fileChangedSinceSync(file) {
+  if (!file?.last_synced) return true;
+  if (!file?.uri) return true;
+  try {
+    const info = await FileSystem.getInfoAsync(file.uri);
+    if (!info?.exists) return false;
+    if (file.synced_size == null && file.synced_mtime == null) {
+      // Synced before change tracking existed. Treat as unchanged so
+      // an upgrade does not trigger a re-upload of everything.
+      return false;
+    }
+    if (file.synced_size != null && info.size !== file.synced_size) return true;
+    if (file.synced_mtime != null &&
+        info.modificationTime !== file.synced_mtime) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+
 export async function markFileAsSynced(fileName) {
   try {
     const files = await getStoredFiles();
 
+    // Record what was synced, not merely that something was. Storing
+    // only a timestamp means a file can never be re-protected after
+    // its first upload, however much it changes afterwards. Size and
+    // modification time let the next hazard ask whether this specific
+    // content has already been sent.
+    const target = files.find((f) => f.name === fileName);
+    let syncedSize = target?.size ?? null;
+    let syncedMtime = null;
+    if (target?.uri) {
+      try {
+        const info = await FileSystem.getInfoAsync(target.uri);
+        if (info?.exists) {
+          syncedSize = info.size ?? syncedSize;
+          syncedMtime = info.modificationTime ?? null;
+        }
+      } catch { /* fall back to the stored size */ }
+    }
+
     const updated = files.map((f) =>
       f.name === fileName
-        ? { ...f, last_synced: new Date().toISOString() }
+        ? {
+            ...f,
+            last_synced: new Date().toISOString(),
+            synced_size: syncedSize,
+            synced_mtime: syncedMtime,
+          }
         : f
     );
 
@@ -249,16 +301,17 @@ export async function uploadSelectedFilesTracked(deviceUid, deviceName,
 
   let uploaded = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const file of files) {
-    // Production skips a file once it has synced, so a second hazard
-    // uploads nothing. That makes upload latency unmeasurable across a
-    // trial grid: the first drop yields a measurement and the other
-    // fifty-nine yield none. Callers that need every emergency to
-    // transfer pass force. The difference is a change in system
-    // behaviour, not just instrumentation, and belongs in the write-up.
-    if (!force && file.last_synced) continue;
     if (file.source !== "local") continue;
+    // Skip only content that has genuinely already been sent. force
+    // overrides this entirely and uploads regardless, which is useful
+    // for isolating transfer latency from the change-detection path.
+    if (!force && !(await fileChangedSinceSync(file))) {
+      skipped += 1;
+      continue;
+    }
     try {
       const result = await uploadFile(file, deviceUid, deviceName, snapshotId);
       if (result?.ok) {
@@ -273,5 +326,6 @@ export async function uploadSelectedFilesTracked(deviceUid, deviceName,
     }
   }
 
-  return { ok: failed === 0, uploaded, failed, snapshot_id: snapshotId };
+  return { ok: failed === 0, uploaded, failed, skipped,
+           snapshot_id: snapshotId };
 }

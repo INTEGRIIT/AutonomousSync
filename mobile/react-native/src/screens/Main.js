@@ -263,7 +263,7 @@ function MainScreen({ navigation }) {
     return startAutoFlush(async (entry) => {
       const r = await uploadSelectedFilesTracked(entry.device_uid || deviceUid,
         entry.device_name || deviceName,
-        entry.snapshot_id, true);
+        entry.snapshot_id);
       return !!r?.ok;
     }, 30000);
   }, [deviceUid, deviceName]);
