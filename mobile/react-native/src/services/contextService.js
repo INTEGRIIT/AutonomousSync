@@ -14,6 +14,7 @@ import * as Device from "expo-device";
 import * as Application from "expo-application";
 import * as Network from "expo-network";
 import { Platform } from "react-native";
+import { BASE_URL } from "../../config";
 
 // Battery level is quantised (often 1%, sometimes 5%), so a drain rate
 // computed from two samples 15 s apart is mostly noise. Track a rolling
@@ -58,7 +59,8 @@ function drainRateFromHistory(hist) {
  * @param {object} deviceRef   ref updated once with DeviceContext
  * @returns {function} cleanup
  */
-export function startContext(batteryRef, networkRef, deviceRef) {
+export function startContext(batteryRef, networkRef, deviceRef,
+                             deviceUidRef, sessionRef, trialRef) {
   // ---- device context: static, resolve once ----
   deviceRef.current = {
     platform: Platform.OS,
@@ -108,11 +110,36 @@ export function startContext(batteryRef, networkRef, deviceRef) {
       else if (st.type === Network.NetworkStateType.ETHERNET) type = "ethernet";
       else if (st.type === Network.NetworkStateType.NONE) type = "none";
 
+      const prev = networkRef.current;
       networkRef.current = {
         type,
         is_connected: !!st.isConnected,
         strength: null, // not exposed cross-platform by expo-network
       };
+
+      // A handoff is not a disconnection. The socket can move from
+      // WiFi to cellular without ever reporting a loss, so the
+      // fault-injection cases that induce an outage do not cover it.
+      // Record the transition so it is visible in analysis rather
+      // than depending on someone noticing they walked out of range.
+      if (prev && prev.type && prev.type !== type) {
+        try {
+          fetch(`${BASE_URL}/network/transition`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              device_uid: deviceUidRef?.current ?? null,
+              session_id: sessionRef?.current?.session_id ?? null,
+              trial_id: trialRef?.current?.trial_id ?? null,
+              from_type: prev.type,
+              to_type: type,
+              was_connected: prev.is_connected,
+              is_connected: !!st.isConnected,
+              ts: Date.now(),
+            }),
+          }).catch(() => {});
+        } catch { /* transition logging is best effort */ }
+      }
     } catch (err) {
       console.log("network poll error:", err?.message || err);
     }

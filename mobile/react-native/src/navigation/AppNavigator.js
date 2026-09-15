@@ -7,6 +7,7 @@ import MainScreen from "../screens/Main";
 import FileManagerScreen from "../screens/FileManagerScreen";
 import EventsScreen from "../screens/EventsScreen";
 import TrialModeScreen from "../screens/TrialModeScreen";
+import SessionModeScreen from "../screens/SessionModeScreen";
 
 const Stack = createStackNavigator();
 
@@ -40,6 +41,12 @@ export default function AppNavigator() {
         />
 
 {/* 🧪 TRIAL MODE (labelled collection runs) */}
+<Stack.Screen
+          name="SessionMode"
+          component={SessionModeScreen}
+          options={{ title: "Session Mode" }}
+        />
+
         <Stack.Screen
           name="TrialMode"
           component={TrialModeScreen}

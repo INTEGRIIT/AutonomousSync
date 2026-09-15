@@ -87,6 +87,11 @@ function MainScreen({ navigation }) {
   const networkRef = useRef(null);
   const deviceCtxRef = useRef(null);
   const trialRef = useRef(null);        // set by TrialModeScreen
+  const sessionRef = useRef(null);      // set by SessionModeScreen
+  // deviceUid is state; the network poll runs on an interval and would
+  // capture whatever it held when the interval was created. Mirror it
+  // into a ref so transition logging reports the current device.
+  const deviceUidRef = useRef(null);
   const packetCountRef = useRef(0);
 
   // Research-device flag. TestFlight testers and research operators run
@@ -289,8 +294,11 @@ function MainScreen({ navigation }) {
 
   /* ================= CONTEXT (battery / network / device) ================= */
 
+  useEffect(() => { deviceUidRef.current = deviceUid; }, [deviceUid]);
+
   useEffect(() => {
-    const stop = startContext(batteryRef, networkRef, deviceCtxRef);
+    const stop = startContext(batteryRef, networkRef, deviceCtxRef,
+                              deviceUidRef, sessionRef, trialRef);
     const ui = setInterval(() => {
       const b = batteryRef.current;
       if (b) {
@@ -324,6 +332,8 @@ function MainScreen({ navigation }) {
         device: deviceCtxRef.current,
         trial_id: trialRef.current?.trial_id ?? null,
         trial_meta: trialRef.current ?? null,
+        session_id: sessionRef.current?.session_id ?? null,
+        session_meta: sessionRef.current ?? null,
         research: researchRef.current || null,
         preferences: preferences || {},
         schema_version: "v3",
@@ -484,6 +494,38 @@ function MainScreen({ navigation }) {
         />
 
         {researchMode && (
+        {researchMode && (
+        <TouchableOpacity
+          style={{
+            backgroundColor: "#12263a",
+            borderRadius: 10,
+            paddingVertical: 14,
+            alignItems: "center",
+            marginHorizontal: 16,
+            marginTop: 10,
+            borderWidth: 1,
+            borderColor: "#0ea5e9",
+          }}
+          onPress={() =>
+            navigation.navigate("SessionMode", {
+              deviceUid,
+              deviceName,
+              platform: deviceCtxRef.current?.platform,
+              deviceModel: deviceCtxRef.current?.model,
+              sessionRef,
+              packetCountRef,
+              batteryRef,
+              networkRef,
+              member: researchMember,
+            })
+          }
+        >
+          <Text style={{ color: "#7dd3fc", fontSize: 15, fontWeight: "700" }}>
+            ⏱ Session Mode
+          </Text>
+        </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           style={{
             backgroundColor: "#1b2942",

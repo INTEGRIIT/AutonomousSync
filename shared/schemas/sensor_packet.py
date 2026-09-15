@@ -135,6 +135,8 @@ class SensorPacket(BaseModel):
 
     trial_id: Optional[str] = None
     trial_meta: Optional[Dict[str, Any]] = None
+    session_id: Optional[str] = None
+    session_meta: Optional[Dict[str, Any]] = None
 
     # -----------------------------------------------------
     # VERSIONING (VERY IMPORTANT)
