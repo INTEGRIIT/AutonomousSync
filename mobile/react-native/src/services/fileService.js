@@ -238,7 +238,8 @@ export async function uploadSelectedFiles(deviceUid, deviceName, snapshotId) {
 // ---------------------------------------------------------------
 
 export async function uploadSelectedFilesTracked(deviceUid, deviceName,
-                                                 snapshotId) {
+                                                 snapshotId,
+                                                 force = false) {
   if (!deviceUid || !deviceName) return { ok: false, reason: "missing_ids" };
 
   const files = await getSelectedFiles();
@@ -250,7 +251,13 @@ export async function uploadSelectedFilesTracked(deviceUid, deviceName,
   let failed = 0;
 
   for (const file of files) {
-    if (file.last_synced) continue;
+    // Production skips a file once it has synced, so a second hazard
+    // uploads nothing. That makes upload latency unmeasurable across a
+    // trial grid: the first drop yields a measurement and the other
+    // fifty-nine yield none. Callers that need every emergency to
+    // transfer pass force. The difference is a change in system
+    // behaviour, not just instrumentation, and belongs in the write-up.
+    if (!force && file.last_synced) continue;
     if (file.source !== "local") continue;
     try {
       const result = await uploadFile(file, deviceUid, deviceName, snapshotId);

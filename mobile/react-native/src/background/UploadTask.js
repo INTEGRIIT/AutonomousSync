@@ -16,8 +16,7 @@ export default async (taskData) => {
                     device_name: deviceName });
 
     await flush(async (entry) => {
-      const r = await uploadSelectedFilesTracked(
-        entry.device_uid, entry.device_name, entry.snapshot_id);
+      const r = await uploadSelectedFilesTracked(entry.device_uid, entry.device_name, entry.snapshot_id, true);
       return !!r?.ok;
     });
   } catch (e) {

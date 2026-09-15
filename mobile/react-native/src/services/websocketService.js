@@ -32,8 +32,7 @@ export function createWebSocket(url, handlers = {}) {
             device_name: data.device_name,
           });
           await flush(async (entry) => {
-            const r = await uploadSelectedFilesTracked(
-              entry.device_uid, entry.device_name, entry.snapshot_id);
+            const r = await uploadSelectedFilesTracked(entry.device_uid, entry.device_name, entry.snapshot_id, true);
             return !!r?.ok;
           });
         } catch (err) {

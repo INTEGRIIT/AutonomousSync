@@ -261,10 +261,9 @@ function MainScreen({ navigation }) {
   useEffect(() => {
     if (!deviceUid || !deviceName) return;
     return startAutoFlush(async (entry) => {
-      const r = await uploadSelectedFilesTracked(
-        entry.device_uid || deviceUid,
+      const r = await uploadSelectedFilesTracked(entry.device_uid || deviceUid,
         entry.device_name || deviceName,
-        entry.snapshot_id);
+        entry.snapshot_id, true);
       return !!r?.ok;
     }, 30000);
   }, [deviceUid, deviceName]);
