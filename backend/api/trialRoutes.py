@@ -123,3 +123,41 @@ async def trials_export(member: str = None, device_uid: str = None):
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
+
+
+# =========================================================
+# UPLOAD TIMING
+#
+# Object-store modification time records when a file arrived, not
+# when its transfer began, so end-to-end upload latency is only
+# observable from the client. Without this, whether a transfer fits
+# inside the pre-impact window is an assumption rather than a
+# measurement.
+# =========================================================
+
+@router.post("/upload/timing")
+async def upload_timing(payload: dict):
+    from backend.db_trials import trials
+    doc = {
+        "device_uid": payload.get("device_uid"),
+        "snapshot_id": payload.get("snapshot_id"),
+        "file_name": payload.get("file_name"),
+        "bytes": payload.get("bytes"),
+        "started_at": payload.get("started_at"),
+        "elapsed_ms": payload.get("elapsed_ms"),
+        "ok": payload.get("ok"),
+    }
+    try:
+        trials.database["upload_timings"].insert_one(doc)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/upload/timings")
+async def upload_timings(device_uid: str = None, limit: int = 2000):
+    from backend.db_trials import trials
+    q = {"device_uid": device_uid} if device_uid else {}
+    rows = list(trials.database["upload_timings"]
+                .find(q, {"_id": 0}).sort("started_at", -1).limit(limit))
+    return {"ok": True, "count": len(rows), "timings": rows}

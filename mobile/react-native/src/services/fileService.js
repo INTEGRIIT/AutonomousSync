@@ -237,14 +237,39 @@ export async function uploadFile(file, deviceUid, deviceName, snapshotId) {
 
 // ================= SELECTED =================
 
+/**
+ * The selected files, with sync state merged in from the catalogue.
+ *
+ * Two stores are in play and both are legitimate. SecureStore holds
+ * which files the user ticked; AsyncStorage holds the catalogue of
+ * every added file along with its metadata and sync state. The
+ * selection is written once as a snapshot of the records at save
+ * time, so when markFileAsSynced updates the catalogue those copies
+ * never see it.
+ *
+ * Reading the selection alone therefore always reports last_synced
+ * as absent, nothing is ever skipped, and every hazard re-uploads
+ * everything. One pilot session produced 160 uploads of three files.
+ *
+ * The selection decides what to consider; the catalogue decides
+ * whether it has already been sent.
+ */
 async function getSelectedFiles() {
   try {
     const raw = await SecureStore.getItemAsync("selected_files");
-    return raw ? JSON.parse(raw) : [];
+    const selected = raw ? JSON.parse(raw) : [];
+    if (!selected.length) return [];
+
+    const catalogue = await getStoredFiles();
+    const byName = {};
+    for (const f of catalogue) byName[f.name] = f;
+
+    return selected.map((sel) => ({ ...sel, ...(byName[sel.name] || {}) }));
   } catch {
     return [];
   }
 }
+
 
 // ================= AUTO UPLOAD =================
 
