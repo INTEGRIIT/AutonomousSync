@@ -92,6 +92,10 @@ function MainScreen({ navigation }) {
   // capture whatever it held when the interval was created. Mirror it
   // into a ref so transition logging reports the current device.
   const deviceUidRef = useRef(null);
+  // Trial Mode needs live connection state. Passing the boolean
+  // through navigation params would freeze it at the value it held
+  // when the screen opened, so pass a ref instead.
+  const connectedRef = useRef(false);
   const packetCountRef = useRef(0);
 
   // Research-device flag. TestFlight testers and research operators run
@@ -209,7 +213,7 @@ function MainScreen({ navigation }) {
         console.log("🚀 PUSH TRIGGER → AUTO FILE UPLOAD:", snapshotId);
 
         try {
-          await uploadSelectedFiles(deviceUid, deviceName, snapshotId);
+          await uploadSelectedFilesTracked(deviceUid, deviceName, snapshotId);
 
           // ✅ mark ONLY after success
           lastUploadRef.current = snapshotId;
@@ -220,7 +224,7 @@ function MainScreen({ navigation }) {
           // 🔁 retry once
           setTimeout(async () => {
             try {
-              await uploadSelectedFiles(deviceUid, deviceName, snapshotId);
+              await uploadSelectedFilesTracked(deviceUid, deviceName, snapshotId);
 
               // ✅ mark after retry success
               lastUploadRef.current = snapshotId;
@@ -294,6 +298,7 @@ function MainScreen({ navigation }) {
   /* ================= CONTEXT (battery / network / device) ================= */
 
   useEffect(() => { deviceUidRef.current = deviceUid; }, [deviceUid]);
+  useEffect(() => { connectedRef.current = connected; }, [connected]);
 
   useEffect(() => {
     const stop = startContext(batteryRef, networkRef, deviceCtxRef,
@@ -407,7 +412,7 @@ function MainScreen({ navigation }) {
             if (!deviceUid || !deviceName) return;
 
             try {
-              await uploadSelectedFiles(deviceUid, deviceName, snapshotId);
+              await uploadSelectedFilesTracked(deviceUid, deviceName, snapshotId);
 
               // ✅ mark ONLY after success
               lastUploadRef.current = snapshotId;
@@ -418,7 +423,7 @@ function MainScreen({ navigation }) {
               // 🔁 retry once
               setTimeout(async () => {
                 try {
-                  await uploadSelectedFiles(deviceUid, deviceName, snapshotId);
+                  await uploadSelectedFilesTracked(deviceUid, deviceName, snapshotId);
                   lastUploadRef.current = snapshotId;
                 } catch (err) {
                   console.log("❌ RETRY FAILED:", err);
@@ -545,6 +550,7 @@ function MainScreen({ navigation }) {
               trialRef,
               packetCountRef,
               member: researchMember,
+              connectedRef,
             })
           }
         >

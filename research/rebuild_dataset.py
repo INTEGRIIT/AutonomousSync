@@ -143,6 +143,9 @@ def ceiling_for(height_ft):
     return (2 * (float(height_ft) * 0.3048) / G) ** 0.5 * 1000
 
 
+FF_PAIRING = os.environ.get("FF_PAIRING", "first")  # first | last
+
+
 def lead_times(ev, max_ms=MAX_FALL_MS):
     """
     Within-episode free_fall -> impact pairing.
@@ -156,7 +159,17 @@ def lead_times(ev, max_ms=MAX_FALL_MS):
         pending_ff = None
         for _, r in grp.iterrows():
             if r["reason"] == "free_fall":
-                pending_ff = r
+                # Keep the FIRST detection of a run, not the last.
+                # Overwriting on every detection measured the lead
+                # time from whichever detection happened to land
+                # closest to impact. A 4 ft pilot drop produced 13
+                # free-fall detections: 916 ms of warning measured
+                # from the first, 2 ms from the last. The old
+                # behaviour is retained under FF_PAIRING=last so the
+                # two can be compared rather than one silently
+                # replacing the other.
+                if pending_ff is None or FF_PAIRING == "last":
+                    pending_ff = r
             elif r["reason"] == "impact" and pending_ff is not None:
                 rows.append({
                     "episode_id": eid,

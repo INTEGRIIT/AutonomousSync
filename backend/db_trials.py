@@ -124,11 +124,31 @@ def delete_trial(trial_id: str, device_uid: str) -> int:
 
 
 def next_trial_number(member: str, device_uid: str) -> int:
-    """Highest trailing number already used by this member, plus one."""
+    """
+    The next unused trial number for this member.
+
+    Counting live records is wrong: deleting a bad trial frees its
+    number, the next trial reuses it, and the packet log still holds
+    the deleted trial's data under that id. Analysis then merges two
+    different drops, which is how a pilot session reported a 488 ms
+    lead time that belonged to an earlier, deleted trial.
+
+    A high-water mark that never decreases avoids this. Numbering
+    gains gaps where trials were deleted, which is the right trade:
+    a gap is visible, a collision is not.
+    """
     best = 0
     for rec in trials.find({"member": member}, {"trial_id": 1, "_id": 0}):
-        tid = rec.get("trial_id") or ""
-        tail = tid.rsplit("-", 1)[-1]
+        tail = (rec.get("trial_id") or "").rsplit("-", 1)[-1]
         if tail.isdigit():
             best = max(best, int(tail))
-    return best + 1
+
+    hw_col = trials.database["trial_highwater"]
+    hw = hw_col.find_one({"member": member})
+    if hw:
+        best = max(best, int(hw.get("n", 0)))
+
+    nxt = best + 1
+    hw_col.update_one({"member": member}, {"$set": {"n": nxt}}, upsert=True)
+    return nxt
+

@@ -34,7 +34,8 @@ export default function TrialModeScreen({ route, navigation }) {
   // trialRef is the same ref the send loop reads, so the trial id and
   // metadata ride inside every telemetry packet.
   const { deviceUid, deviceName, platform, deviceModel, trialRef,
-          packetCountRef, member: assignedMember } = route.params || {};
+          packetCountRef, member: assignedMember,
+          connectedRef } = route.params || {};
 
   // The member is a property of the device, assigned when it was
   // flagged as a research device, not a per-trial choice. Letting the
@@ -115,6 +116,18 @@ export default function TrialModeScreen({ route, navigation }) {
   const arm = async () => {
     if (!deviceUid) {
       Alert.alert("No device", "Connect on the main screen first.");
+      return;
+    }
+    // deviceUid is set at startup and stays set whether or not the
+    // socket is open, so checking it alone lets a trial arm with no
+    // connection. The trial then records, completes, and contains
+    // nothing: one pilot session lost eleven trials this way before
+    // anyone noticed.
+    if (connectedRef && connectedRef.current === false) {
+      Alert.alert(
+        "Not connected",
+        "Tap Connect on the main screen and wait for it to turn green. "
+        + "A trial armed while disconnected records no data.");
       return;
     }
     if (!isBenign && (resolvedHeight === null || resolvedHeight <= 0)) {
