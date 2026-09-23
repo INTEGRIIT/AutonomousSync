@@ -93,6 +93,35 @@ async def trials_next(member: str, device_uid: str):
     return {"ok": True, "next": n, "suggested_id": f"{member}-{n:03d}"}
 
 
+@router.post("/trials/note")
+async def trials_note(payload: dict):
+    """
+    Attach an observation to a trial after it has ended.
+
+    The note field on the setup screen is filled in before the drop,
+    so it cannot record what actually happened: that the phone bounced
+    twice, or landed face up and rolled face down, or that the release
+    was fumbled. Those details are what explain an unexpected jerk
+    signature months later, and without somewhere to put them they are
+    lost the moment the operator moves to the next trial.
+    """
+    tid = payload.get("trial_id")
+    uid = payload.get("device_uid")
+    note = (payload.get("note") or "").strip()
+    if not tid or not uid:
+        return {"ok": False, "error": "trial_id and device_uid required"}
+    if not note:
+        return {"ok": True, "skipped": True}
+    try:
+        from backend.db_trials import trials
+        r = trials.update_one(
+            {"trial_id": tid, "device_uid": uid},
+            {"$set": {"observed_note": note}})
+        return {"ok": r.matched_count > 0, "matched": r.matched_count}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @router.delete("/trials")
 async def trials_delete(trial_id: str, device_uid: str):
     n = delete_trial(trial_id, device_uid)

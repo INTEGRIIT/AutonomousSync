@@ -46,6 +46,7 @@ EXPORT_COLUMNS = [
     "platform",
     "device_model",
     "notes",
+    "observed_note",
 ]
 
 

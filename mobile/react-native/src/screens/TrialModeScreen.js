@@ -57,6 +57,14 @@ export default function TrialModeScreen({ route, navigation }) {
 
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // What actually happened is only knowable after the drop, and the
+  // notes field on the setup screen is filled in before it. Without
+  // somewhere to record that the phone bounced twice, or landed face
+  // up and rolled face down, that detail is gone the moment the
+  // operator moves on — and it is exactly what explains an odd jerk
+  // signature when the data is read months later.
+  const [reviewOf, setReviewOf] = useState(null);
+  const [observed, setObserved] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [packets, setPackets] = useState(0);
   const [completed, setCompleted] = useState(0);
@@ -213,8 +221,52 @@ export default function TrialModeScreen({ route, navigation }) {
     setBusy(false);
     setNotes("");
     setCompleted((c) => c + 1);
+    setReviewOf(trialId);
+    setObserved("");
     setSeq((s) => s + 1);
   };
+
+  const saveObserved = async (text) => {
+    const id = reviewOf;
+    setReviewOf(null);
+    setObserved("");
+    if (!text || !text.trim()) return;
+    try {
+      await fetch(`${BASE_URL}/trials/note`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trial_id: id, device_uid: deviceUid, note: text.trim(),
+        }),
+      });
+    } catch { /* best effort; the trial itself is already recorded */ }
+  };
+
+  if (reviewOf) {
+    return (
+      <View style={s.revWrap}>
+        <Text style={s.revLabel}>{reviewOf} recorded</Text>
+        <Text style={s.revAsk}>Anything unusual about that drop?</Text>
+        <TextInput
+          style={s.revInput}
+          value={observed}
+          onChangeText={setObserved}
+          autoFocus
+          multiline
+          placeholder="bounced twice and settled screen down, release was late, missed the mark…"
+          placeholderTextColor="#667"
+        />
+        <TouchableOpacity style={s.revSave}
+                          onPress={() => saveObserved(observed)}>
+          <Text style={s.revSaveTxt}>Save note</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.revSkip}
+                          onPress={() => saveObserved("")}>
+          <Text style={s.revSkipTxt}>Nothing unusual</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   // ---------------- ARMED VIEW (blinded) ----------------
   if (armed) {
@@ -405,6 +457,18 @@ const s = StyleSheet.create({
           marginBottom: 14 },
   cardTitle: { color: "#9fb", fontSize: 12, fontWeight: "700",
                letterSpacing: 1, marginBottom: 10 },
+  revWrap: { flex: 1, backgroundColor: "#0b1220", padding: 24,
+             justifyContent: "center" },
+  revLabel: { color: "#4ade80", fontSize: 22, fontWeight: "700" },
+  revAsk: { color: "#fff", fontSize: 17, marginTop: 10, marginBottom: 16 },
+  revInput: { backgroundColor: "#1b2942", color: "#fff", borderRadius: 10,
+              padding: 14, fontSize: 15, minHeight: 110,
+              textAlignVertical: "top" },
+  revSave: { backgroundColor: "#2563eb", borderRadius: 10, paddingVertical: 16,
+             alignItems: "center", marginTop: 16 },
+  revSaveTxt: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  revSkip: { paddingVertical: 16, alignItems: "center", marginTop: 4 },
+  revSkipTxt: { color: "#8aa", fontSize: 15 },
   lbl: { color: "#8aa", fontSize: 12, marginTop: 10, marginBottom: 6 },
   assigned: { backgroundColor: "#14321f", borderRadius: 8, padding: 12,
               flexDirection: "row", alignItems: "baseline" },
