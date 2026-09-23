@@ -224,7 +224,7 @@ export default function TrialModeScreen({ route, navigation }) {
     startPacketsRef.current = packetCountRef?.current ?? 0;
     startTsRef.current = Date.now();
     releaseRef.current = null;
-    setCountdown(isBenign ? null : 3);
+    setCountdown(isBenign ? null : 5);
     setElapsed(0);
     setPackets(0);
     setArmed(true);
