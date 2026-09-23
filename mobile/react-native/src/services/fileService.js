@@ -235,6 +235,17 @@ export async function uploadFile(file, deviceUid, deviceName, snapshotId) {
   }
 }
 
+// A hazard can fire repeatedly during a single trial, and each
+// emergency starts its own upload pass. A small file completes and
+// is marked before the next pass begins, so it skips correctly. A
+// large one is still in flight, is never marked in time, and is
+// re-sent by every pass — one 33-second trial produced fourteen
+// copies of a 4.6 MB file and none of the smaller two.
+//
+// Serialising the passes means a file is always marked before
+// anything else can ask whether it has been sent.
+let _uploadInFlight = null;
+
 // ================= SELECTED =================
 
 /**
@@ -317,6 +328,22 @@ export async function uploadSelectedFiles(deviceUid, deviceName, snapshotId) {
 export async function uploadSelectedFilesTracked(deviceUid, deviceName,
                                                  snapshotId,
                                                  force = false) {
+  if (_uploadInFlight) {
+    await _uploadInFlight.catch(() => {});
+  }
+  let release;
+  _uploadInFlight = new Promise((r) => { release = r; });
+  try {
+    return await _uploadSelectedFilesTracked(deviceUid, deviceName,
+                                             snapshotId, force);
+  } finally {
+    release();
+    _uploadInFlight = null;
+  }
+}
+
+async function _uploadSelectedFilesTracked(deviceUid, deviceName,
+                                           snapshotId, force = false) {
   if (!deviceUid || !deviceName) return { ok: false, reason: "missing_ids" };
 
   const files = await getSelectedFiles();
