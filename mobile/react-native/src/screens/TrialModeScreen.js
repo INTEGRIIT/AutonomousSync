@@ -65,6 +65,16 @@ export default function TrialModeScreen({ route, navigation }) {
   // signature when the data is read months later.
   const [reviewOf, setReviewOf] = useState(null);
   const [observed, setObserved] = useState("");
+
+  // A countdown does two things a written instruction cannot. It makes
+  // every operator hold the phone still for the same interval before
+  // releasing, so the lowering motion is separated from the drop. And
+  // recording when it reaches zero gives an approximate release time
+  // that does not come from our own detector — the pilot showed free
+  // fall firing during the lowering, which inflated one lead time to
+  // 916 ms when the real warning was under 200.
+  const [countdown, setCountdown] = useState(null);
+  const releaseRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
   const [packets, setPackets] = useState(0);
   const [completed, setCompleted] = useState(0);
@@ -117,6 +127,26 @@ export default function TrialModeScreen({ route, navigation }) {
     }, 500);
     return () => clearInterval(i);
   }, [armed]);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      releaseRef.current = Date.now();
+      if (trialRef?.current) trialRef.current.released = true;
+      fetch(`${BASE_URL}/trials/release`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trial_id: trialId, device_uid: deviceUid,
+          release_ts: releaseRef.current,
+        }),
+      }).catch(() => {});
+      const t = setTimeout(() => setCountdown(null), 700);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
 
   const isBenign = intendedClass === "benign_handle" ||
                    intendedClass === "stationary";
@@ -193,6 +223,8 @@ export default function TrialModeScreen({ route, navigation }) {
     }
     startPacketsRef.current = packetCountRef?.current ?? 0;
     startTsRef.current = Date.now();
+    releaseRef.current = null;
+    setCountdown(isBenign ? null : 3);
     setElapsed(0);
     setPackets(0);
     setArmed(true);
@@ -276,7 +308,18 @@ export default function TrialModeScreen({ route, navigation }) {
       <View style={s.armedWrap}>
         <Text style={s.armedLabel}>RECORDING</Text>
         <Text style={s.armedId}>{trialId}</Text>
-        <Text style={s.armedTimer}>{mm}:{ss}</Text>
+        {countdown !== null ? (
+          <>
+            <Text style={s.cdHold}>
+              {countdown > 0 ? "HOLD STILL" : "RELEASE"}
+            </Text>
+            <Text style={countdown > 0 ? s.cdNum : s.cdGo}>
+              {countdown > 0 ? countdown : "DROP"}
+            </Text>
+          </>
+        ) : (
+          <Text style={s.armedTimer}>{mm}:{ss}</Text>
+        )}
         <Text style={s.armedPackets}>{packets} packets</Text>
         <Text style={s.armedCond}>
           {isBenign
@@ -457,6 +500,10 @@ const s = StyleSheet.create({
           marginBottom: 14 },
   cardTitle: { color: "#9fb", fontSize: 12, fontWeight: "700",
                letterSpacing: 1, marginBottom: 10 },
+  cdHold: { color: "#fca5a5", fontSize: 15, letterSpacing: 3,
+            marginTop: 22, fontWeight: "700" },
+  cdNum: { color: "#fff", fontSize: 96, fontWeight: "800", marginTop: 4 },
+  cdGo: { color: "#4ade80", fontSize: 64, fontWeight: "800", marginTop: 16 },
   revWrap: { flex: 1, backgroundColor: "#0b1220", padding: 24,
              justifyContent: "center" },
   revLabel: { color: "#4ade80", fontSize: 22, fontWeight: "700" },

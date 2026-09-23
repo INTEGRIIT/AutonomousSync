@@ -93,6 +93,29 @@ async def trials_next(member: str, device_uid: str):
     return {"ok": True, "next": n, "suggested_id": f"{member}-{n:03d}"}
 
 
+@router.post("/trials/release")
+async def trials_release(payload: dict):
+    """
+    When the countdown reached zero, as an approximate release time.
+
+    Lead time computed from our own free-fall detection is circular:
+    the pilot showed detections firing during the lowering motion, so
+    the earliest one can precede the drop by half a second. A release
+    reference the detector had no part in producing lets us measure
+    how much of the available window it actually captured.
+    """
+    tid, uid = payload.get("trial_id"), payload.get("device_uid")
+    if not tid or not uid:
+        return {"ok": False, "error": "trial_id and device_uid required"}
+    try:
+        from backend.db_trials import trials
+        r = trials.update_one({"trial_id": tid, "device_uid": uid},
+                              {"$set": {"release_ts": payload.get("release_ts")}})
+        return {"ok": r.matched_count > 0}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @router.post("/trials/note")
 async def trials_note(payload: dict):
     """
