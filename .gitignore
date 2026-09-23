@@ -93,3 +93,5 @@ research/~$*
 
 *.bak
 *.bak[0-9]
+
+backend/firebase/*-adminsdk-*.json
